@@ -61,7 +61,8 @@ def _read_byte_stream(command, framesize, dtype, bufsize, readsize, online_func=
         else:
             return None
 
-def ffmpeg_open_raw_audio(filename, n_channels=2, dtype=np.int16, bufsize=1, readsize=1, online_func=None, keep_data=True):
+def ffmpeg_open_raw_audio(filename, n_channels=2, dtype=np.int16, bufsize=1, readsize=1, online_func=None, keep_data=True, 
+                                    start=None, duration=None):
     '''
     Reads an audio file into memory using ffmpeg with optional online processing
 
@@ -83,14 +84,25 @@ def ffmpeg_open_raw_audio(filename, n_channels=2, dtype=np.int16, bufsize=1, rea
 
     pcm_format = {np.int16: 's16le', np.int32: 's32le'}
 
-    command_a = [ FFMPEG_BIN, '-i', filename, '-f', pcm_format[dtype], '-' ]
+    command_a = [ FFMPEG_BIN, '-i', filename, '-vn', '-f', pcm_format[dtype] ]
+
+    if start is not None:
+        command_a += [ '-ss', str(start) ]
+
+    if duration is not None:
+        command_a += ['-t', str(duration) ]
+
+    # output to pipe
+    command_a += [ '-' ]
+
     framesize = (n_channels,)
 
     return _read_byte_stream(command_a, (n_channels,), dtype, bufsize, readsize, 
                                         online_func=online_func, keep_data=keep_data)
 
 
-def ffmpeg_open_raw_video(filename, framesize, n_channels=3, dtype=np.uint8, bufsize=1, readsize=1, online_func=None, keep_data=True):
+def ffmpeg_open_raw_video(filename, framesize, n_channels=3, dtype=np.uint8, bufsize=1, readsize=1, online_func=None, keep_data=True,
+                                    start=None, duration=None):
     '''
     Reads a video file into memory using ffmpeg with optional online processing
 
@@ -120,66 +132,16 @@ def ffmpeg_open_raw_video(filename, framesize, n_channels=3, dtype=np.uint8, buf
             '-i', filename, 
             '-f', 'image2pipe', 
             '-pix_fmt', 'rgb24', 
-            '-vcodec', 'rawvideo', 
-            '-']
+            '-vcodec', 'rawvideo' ]
+
+    if start is not None:
+        command_v += [ '-ss', str(start) ]
+
+    if duration is not None:
+        command_v += ['-t', str(duration) ]
+
+    # output to pipe
+    command_v += [ '-' ]
 
     return _read_byte_stream(command_v, framesize[::-1] + (n_channels,), dtype, bufsize, readsize,
                                         online_func=online_func, keep_data=keep_data)
-
-
-class OnlineStats(object):
-    '''
-    Compute statistics on the input data in an online way
-
-    Parameters
-    ----------
-    shape: tuple of int
-        Shape of a data point tensor
-
-    Attributes
-    ----------
-    mean: array_like (shape)
-        Mean of all input samples
-    var: array_like (shape)
-        Variance of all input samples
-    count: int
-        Sample size
-    '''
-
-    def __init__(self, shape):
-        '''
-        Initialize everything to zero
-        '''
-        self.shape = shape
-        self.mean = np.zeros(shape, dtype=np.float64)
-        self.var = np.zeros(shape, dtype=np.float64)
-        self.count = 0
-
-    def process(self, data):
-        '''
-        Update statistics with new data
-
-        Parameters
-        ----------
-        data: array_like
-            A collection of new data points of the correct shape in an array
-            where the first dimension goes along the data points
-        '''
-
-        if data.shape[-len(self.shape):] != self.shape:
-            raise ValueError('The data.shape[1:] should match the statistics object shape')
-
-        data.reshape((-1,) + self.shape)
-
-        count = data.shape[0]
-        mean = np.mean(data, axis=0)
-        var = np.var(data, axis=0)
-
-        m1 = self.var * (self.count - 1)
-        m2 = var * (count - 1)
-        M2 = m1 + m2 + (self.mean - mean) ** 2 * count * self.count / (count + self.count)
-
-        self.mean = (count * mean + self.count * self.mean) / (count + self.count)
-        self.count += count
-        self.var = M2 / (self.count - 1)
-

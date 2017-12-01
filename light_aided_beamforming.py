@@ -93,9 +93,9 @@ w = np.concatenate([np.ones((1,M))/np.sqrt(M), w], axis=0)
 ref = X[vad_x,:,0]
 
 #z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=20, clip_up=1.0, clip_down=0.1)
-z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=20)
+#z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=20)
 #z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=None, clip_up=2.0)
-#z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=None)
+z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=None)
 #z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=20)
 
 sig_in = pra.normalize(mics.signals[0])
