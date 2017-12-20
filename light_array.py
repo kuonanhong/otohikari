@@ -26,7 +26,8 @@ class LightArray(pra.MicrophoneArray):
         '''
 
         # running average of power
-        pwr = signals ** 2
+        pwr = np.diff(signals) ** 2
+        #pwr = signals ** 2
 
         if fs != self.fs:
             ratio = self.fs / fs
@@ -49,6 +50,9 @@ class LightArray(pra.MicrophoneArray):
 
         else:
             self.signals = pwr
+
+        self.signals = 10 * np.log10(np.abs(self.signals))
+
 
 class LightArray2(np.ndarray):
 
@@ -83,7 +87,7 @@ class LightArray2(np.ndarray):
         '''
 
         # running average of power
-        pwr = signals ** 2
+        pwr = np.diff(signals) ** 2
 
         if fs != self.fs:
             ratio = self.fs / fs

@@ -65,6 +65,7 @@ wavfile.write(os.path.join(args.output_dir, new_name + '_audio_' + str(fs_a // 1
 
 # video information
 framesize_v = (1280, 720)
+#framesize_v = (640, 480)
 n_channels_v = 3
 fs_v = 30
 v_bufsize = 3 * int(fs_v)  # collect 1s (approx) of video frames

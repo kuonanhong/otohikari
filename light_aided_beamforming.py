@@ -10,7 +10,7 @@ from scipy import linalg as la
 import pyroomacoustics as pra
 import matplotlib.pyplot as plt
 
-from utils import compute_variances, compute_gain
+from max_sinr_beamforming import compute_variances, compute_gain
 from light_array import LightArray2
 
 ### Parameters ###
@@ -35,7 +35,7 @@ mics_loc = pra.circular_2D_array([2., 2.], 6, 0, 0.0625)  # kindof compactsix
 src_loc = np.r_[5, 2]  # source location
 noise_loc = np.r_[2.5, 4.5]
 
-SIR = 15  # decibels
+SIR = 25  # decibels
 SINR = SIR - 1  # decibels
 
 sigma_i, sigma_n = compute_variances(SIR, SINR, src_loc, noise_loc, mics_loc.mean(axis=1), sigma_s=sigma_s)
@@ -48,7 +48,7 @@ room.add_source(noise_loc, signal=interference_audio)
 
 # conventional microphone array
 M = mics_loc.shape[1]
-mics = pra.Beamformer(mics_loc, fs=fs_sound, N=nfft, hop=nfft / 2, zpb=nfft)
+mics = pra.Beamformer(mics_loc, fs=fs_sound, N=nfft, hop=nfft // 2, zpb=nfft)
 room.add_microphone_array(mics)
 
 room.simulate()
@@ -65,9 +65,7 @@ leds_time = np.arange(leds.signals.shape[0]) / fs_light
 vad = leds.signals > vad_thresh
 
 # Now compute the STFT of the microphone input
-engine = None
-engine = pra.realtime.STFT(nfft, nfft/2, channels=mics.M, analysis_window=pra.hann(nfft))
-X = engine.analysis_multiple(room.mic_array.signals.T)
+X = np.moveaxis([ pra.stft(a, nfft, nfft//2, np.fft.rfft, win=pra.hann(nfft)) for a in room.mic_array.signals ], 0, -1)
 X_time = np.arange(1, X.shape[0]+1) * (nfft / 2) / fs_sound
 
 # we need to match the VAD to sampling rate of X
@@ -92,19 +90,20 @@ w = np.concatenate([np.ones((1,M))/np.sqrt(M), w], axis=0)
 # Compute the gain
 ref = X[vad_x,:,0]
 
-#z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=20, clip_up=1.0, clip_down=0.1)
-#z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=20)
-#z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=None, clip_up=2.0)
-z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=None)
-#z = compute_gain(w, X[vad_x,:,:], ref, n_lambda=20)
+#z = compute_gain(w, X[vad_x,:,:], ref, clip_up=1.0, clip_down=0.1)
+z = compute_gain(w, X[vad_x,:,:], ref, clip_up=2.0)
+#z = compute_gain(w, X[vad_x,:,:], ref)
+#z = compute_gain(w, X[vad_x,:,:], ref)
 
 sig_in = pra.normalize(mics.signals[0])
 
 mics.weights = w.T
 
 room.plot(img_order=1, freq=[800,1000,1200, 1400, 1600, 1800, 2000])
+plt.title('No matching')
 plt.figure()
 mics.plot_beam_response()
+plt.title('No matching')
 
 sig_out_flat = mics.process()
 sig_out_flat = pra.normalize(sig_out_flat)
@@ -114,9 +113,11 @@ sig_out_ref0 = mics.process()
 sig_out_ref0 = pra.normalize(sig_out_ref0)
 
 room.plot(img_order=1, freq=[800,1000,1200, 1400, 1600, 1800, 2000])
+plt.title('Channel 1 matching')
 
 plt.figure()
 mics.plot_beam_response()
+plt.title('Channel 1 matching')
 
 plt.figure()
 plt.plot(sound_time, target_audio)

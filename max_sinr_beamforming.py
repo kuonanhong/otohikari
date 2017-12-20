@@ -1,4 +1,5 @@
 import numpy as np
+import scipy.linalg as la
 import matplotlib.pyplot as plt
 
 def compute_variances(SIR, SINR, source_loc, interference_loc, mic_loc, sigma_s=1):
@@ -20,7 +21,7 @@ def compute_variances(SIR, SINR, source_loc, interference_loc, mic_loc, sigma_s=
 
     return sigma_i, sigma_n
 
-def compute_gain(w, X, ref, n_lambda=20, clip_up=None, clip_down=None):
+def compute_gain(w, X, ref, clip_up=None, clip_down=None, sqm=False):
     '''
 
     Parameters
@@ -38,35 +39,22 @@ def compute_gain(w, X, ref, n_lambda=20, clip_up=None, clip_down=None):
         Limits the minimum value of the gain (default no limit)
     '''
 
+    y = np.sum(X * np.conj(w), axis=2)
 
-    if n_lambda is None:
-        lag = np.zeros(1)
-    else:
-        lag = np.logspace(-10, 5, n_lambda)
+    num = np.sum(np.conj(ref) * y, axis=0)
+    denom = np.sum(np.abs(y)**2, axis=0)
 
-    let_weights = [np.zeros(n_lambda)]
-
-    left_hand = np.sum(np.sum(X, axis=0) * np.conj(w), axis=1)
-    right_hand = np.sum(ref, axis=0)
-
-    left_sqm = np.abs(left_hand)**2
-
-    G = (left_sqm[:,None] / (left_sqm[:,None] + lag[None,:])) * right_hand[:,None]
-    c_candidates = G / left_hand[:,None]
-
-    if n_lambda is not None:
-        weights = np.linalg.lstsq(G, right_hand)[0]
-        c = np.squeeze(np.dot(c_candidates, weights))
-    else:
-        c = c_candidates[:,0]
+    c = np.ones(num.shape, dtype=np.complex)
+    I = denom > 0.
+    c[I] = num[I] / denom[I]
 
     if clip_up is not None:
-        I = np.abs(c) > clip_up
+        I = np.logical_and(np.abs(c) > clip_up, np.abs(c) > 0)
         c[I] *= clip_up / np.abs(c[I])
 
     if clip_down is not None:
-        I = np.abs(c) < clip_down
+        I = np.logical_and(np.abs(c) < clip_down, np.abs(c) > 0)
         c[I] *= clip_down / np.abs(c[I])
 
-    return np.conj(c)
+    return c
 
