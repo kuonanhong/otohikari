@@ -45,9 +45,9 @@ def objective(x, A, sigma, varobj, *args, **kwargs):
     Paper by Chen et al.
     '''
 
-    m, s, R, X = varobj.unpack(x)
+    m, s, R, X, alpha = varobj.unpack(x)
 
-    F = (A - m[:,None] - s[None,:] + np.log(pra.distance(R, X))) / sigma
+    F = (A - m[:,None] - s[None,:] + alpha[0] * np.log(pra.distance(R, X)**2)) / sigma
 
     return F.ravel()
 
@@ -57,9 +57,9 @@ def jacobian(x, A, sigma, varobj, *args, **kwargs):
     Paper by Chen et al.
     '''
 
-    m, s, R, X = varobj.unpack(x)
+    m, s, R, X, alpha = varobj.unpack(x)
     dif = R[:,:,None] - X[:,None,:]
-    D = np.sum(dif**2, axis=0)
+    D2 = np.sum(dif**2, axis=0)
 
     J = np.zeros(A.shape + (varobj.length,))
 
@@ -68,13 +68,14 @@ def jacobian(x, A, sigma, varobj, *args, **kwargs):
         for j in range(A.shape[1]):
 
             # this is just a split and reshape trick
-            dm, ds, dR, dX = varobj.unpack(J[i,j,:])
+            dm, ds, dR, dX, dalpha = varobj.unpack(J[i,j,:])
 
             # fill in where not zero
             dm[i] = -1 / sigma[i,j]
             ds[j] = -1 / sigma[i,j]
-            dR[:,i] = dif[:,i,j] / D[None,i,j] / sigma[i,j]
-            dX[:,j] = - dif[:,i,j] / D[None,i,j] / sigma[i,j]
+            dR[:,i] = dif[:,i,j] / D2[None,i,j] / sigma[i,j]
+            dX[:,j] = - dif[:,i,j] / D2[None,i,j] / sigma[i,j]
+            dalpha[:] = np.log(D2[i,j])
 
             if 'fix_mic_gain' in kwargs and kwargs['fix_mic_gain']:
                 dm[:] = 0
@@ -88,6 +89,8 @@ def jacobian(x, A, sigma, varobj, *args, **kwargs):
             if 'fix_src' in kwargs and kwargs['fix_src']:
                 dX[:,:] = 0
 
+            if 'fix_alpha' in kwargs and kwargs['fix_alpha']:
+                dalpha[:] = 0
 
             dm[0] = 0.
             dR[:,0] = 0.
@@ -101,9 +104,9 @@ def squared_loss(x, A, sigma, varobj, objective, jacobian, *args, **kwargs):
     '''
 
     obj = objective(x, A, sigma, varobj, *args, **kwargs)
-    f_val = np.sum(obj**2)
+    f_val = 0.5 * np.sum(obj**2)
 
-    grad = 2. * np.sum(jacobian(x, A, sigma, varobj, *args, **kwargs) * obj[:,None], axis=0)
+    grad = np.sum(jacobian(x, A, sigma, varobj, *args, **kwargs) * obj[:,None], axis=0)
 
     return f_val, grad
 
