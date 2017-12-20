@@ -67,7 +67,7 @@ assert source_gains_db.shape[0] == n_speakers
 assert n_speakers <= n_devices
 
 # Create the room
-room = pra.ShoeBox([6,5], fs=16000, max_order=12, absorption=0.3, sigma2_awgn=0)
+room = pra.ShoeBox([6,5], fs=16000, max_order=12, absorption=0.4, sigma2_awgn=1e-5)
 
 # The active segments in seconds for each speakers
 # For now, each speaker speaks for 0.8 seconds in turn
