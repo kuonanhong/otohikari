@@ -1,6 +1,9 @@
 import numpy as np
 import pyroomacoustics as pra
+import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
+from rescaled_srls import rescaled_SRLS
+from pylocus.lateration import SRLS
 
 class VarPacker(object):
     '''
@@ -38,16 +41,15 @@ class VarPacker(object):
         
         return out
 
-
 def objective(x, A, sigma, varobj, *args, **kwargs):
     '''
     This is the loss function for the energy based localization from the Microsoft group
     Paper by Chen et al.
     '''
 
-    m, s, R, X, alpha = varobj.unpack(x)
+    m, s, R, X, alpha, scale = varobj.unpack(x)
 
-    F = (A - m[:,None] - s[None,:] + alpha[0] * np.log(pra.distance(R, X)**2)) / sigma
+    F = (A - m[:,None] - s[None,:] + alpha[0] * np.log(pra.distance(R, X)**2) + scale[0]) / sigma
 
     return F.ravel()
 
@@ -57,7 +59,7 @@ def jacobian(x, A, sigma, varobj, *args, **kwargs):
     Paper by Chen et al.
     '''
 
-    m, s, R, X, alpha = varobj.unpack(x)
+    m, s, R, X, alpha, scale = varobj.unpack(x)
     dif = R[:,:,None] - X[:,None,:]
     D2 = np.sum(dif**2, axis=0)
 
@@ -68,14 +70,15 @@ def jacobian(x, A, sigma, varobj, *args, **kwargs):
         for j in range(A.shape[1]):
 
             # this is just a split and reshape trick
-            dm, ds, dR, dX, dalpha = varobj.unpack(J[i,j,:])
+            dm, ds, dR, dX, dalpha, dscale = varobj.unpack(J[i,j,:])
 
             # fill in where not zero
             dm[i] = -1 / sigma[i,j]
             ds[j] = -1 / sigma[i,j]
-            dR[:,i] = dif[:,i,j] / D2[None,i,j] / sigma[i,j]
-            dX[:,j] = - dif[:,i,j] / D2[None,i,j] / sigma[i,j]
+            dR[:,i] = 2 * alpha * dif[:,i,j] / D2[None,i,j] / sigma[i,j]
+            dX[:,j] = - 2 * alpha * dif[:,i,j] / D2[None,i,j] / sigma[i,j]
             dalpha[:] = np.log(D2[i,j])
+            dscale[:] = 1.
 
             if 'fix_mic_gain' in kwargs and kwargs['fix_mic_gain']:
                 dm[:] = 0
@@ -91,6 +94,12 @@ def jacobian(x, A, sigma, varobj, *args, **kwargs):
 
             if 'fix_alpha' in kwargs and kwargs['fix_alpha']:
                 dalpha[:] = 0
+
+            if 'noisy_gradient' in kwargs and kwargs['noisy_gradient']:
+                J[i,j,:] += np.random.randn(varobj.length) * 0.01 * np.std(J[i,j,:])
+
+            if 'fix_scale' in kwargs and kwargs['fix_scale']:
+                dscale[:] = 0
 
             dm[0] = 0.
             dR[:,0] = 0.
@@ -130,114 +139,6 @@ def test_jacobian(eps, x, A, sigma, packer):
 
     return err, jac_theory - jac_emp
 
-def alternating_opt(A, sigma, R, m, s, X, n_iter=100, track_error=False, alpha=1):
-
-    m = m.copy()
-    s = s.copy()
-    X = X.copy()
-    D2 = pra.distance(R, X)**2
-
-    def cost(A, sigma, m, s, D2, alpha):
-        return np.linalg.norm((A + alpha * np.log(D2) - m[:,None] - s[None,:]) / sigma)
-
-    from pylocus.lateration import SRLS
-
-    if track_error:
-        error = np.zeros(n_iter+1)
-        error[0] = cost(A, sigma, m, s, D2, alpha)
-
-    for epoch in range(n_iter):
-
-        S = A + alpha * np.log(D2)
-        m, s = cdm_unfolding(1. / sigma, S, sum_matrix=True)
-
-        D2 = np.exp((m[:,None] + s[None,:] - A) / alpha)
-
-        # Use SRLS to recompute locations of speakers
-        for i in range(A.shape[1]):
-            X[:,i] = SRLS(R.T, 1. / sigma[:,i], D2[:,i])
-
-        D2 = pra.distance(R, X)**2
-
-        if track_error:
-            error[epoch+1] = cost(A, sigma, m, s, D2, alpha)
-
-    if track_error:
-        import matplotlib.pyplot as plt
-        plt.plot(error)
-        plt.show()
-
-
-    return m, s, X, cost(A, W, m, s, D2, alpha)
-
-def alternating_opt_2(A, sigma, R0, m0, s0, X0, step=0.001, n_iter=100, track_error=False, alpha=1):
-
-    packer = VarPacker([m0.shape, s0.shape, R0.shape, X0.shape])
-    x = packer.new_vector()
-    m, s, R, X = packer.unpack(x)
-
-    W = 1 / sigma
-    m[:] = m.copy()
-    s[:] = s.copy()
-    X[:,:] = X.copy()
-    R[:,:] = R0.copy()
-    D2 = pra.distance(R, X)**2
-
-    def cost(A, W, m, s, D2, alpha):
-        return np.linalg.norm((A + alpha * np.log(D2) - m[:,None] - s[None,:]) * W)
-
-    from pylocus.lateration import SRLS
-
-    if track_error:
-        error = np.zeros(n_iter+1)
-        error[0] = cost(A, W, m, s, D2, alpha)
-
-    for epoch in range(n_iter):
-
-        # zero gradient for m and s
-        S = A + alpha * np.log(D2)
-        m[:], s[:] = cdm_unfolding(W, S, sum_matrix=True)
-
-        # NNLS
-
-        res_1 = least_squares(objective, x, jac=jacobian, 
-                args=(A, sigma, packer),
-                kwargs={'fix_mic' : True, 'fix_mic_gain' : True, 'fix_src_gain' : True},
-                #ftol=1e-15, 
-                #max_nfev=1000,
-                method='lm', 
-                #loss='huber',
-                #verbose=1
-                )
-        m[:], s[:], R[:,:], X[:,:] = packer.unpack(res_1.x)
-
-
-        '''
-        # gradient step for X
-        for loop in range(10):
-            S = m[None,:,None] + s[None,None,:]
-            direction_vector = (X[:,None,:] - R[:,:,None]) / D2[None,:,:]
-            grad_X = 4 * np.sum(W[None,:,:] * direction_vector * (A[None,:,:] - S + alpha * np.log(D2[None,:,:])), axis=1)
-
-            X -= step * grad_X
-
-            D2 = pra.distance(R, X)**2
-        '''
-
-        D2 = pra.distance(R, X)**2
-
-        if track_error:
-            error[epoch+1] = cost(A, W, m, s, D2, alpha)
-
-    if track_error:
-        import matplotlib.pyplot as plt
-        plt.plot(error)
-        plt.show()
-
-
-    return m, s, X, cost(A, sigma, m, s, D2, alpha)
-
-
 def cdm_unfolding(W, S, sum_matrix=False):
     '''
     Coordinate Difference Matrix Unfolding
@@ -274,4 +175,128 @@ def cdm_unfolding(W, S, sum_matrix=False):
     else:
         return s[:m], s[m:]
 
+def energy_localization(A, sigma, mics_locations, n_iter=100, verbose=False):
+    '''
+    Energy based localization
 
+    Parameters
+    ----------
+    A : array_like (n_microphones, n_sources)
+        A matrix containing the log-energy of the sources at given sensors.
+        A[m,k] contains the energy of the k-th source at the m-th microphone.
+    sigma : array_like (n_microphones, n_sources)
+        A matrix containing the noise standard deviations.
+    R : array_like (n_dim, n_microphones)
+        The location of the microphones
+    verbose : bool, optional
+        Printout stuff
+
+    Returns
+    -------
+    gains : The gains of the microphones
+    powers : The source powers
+    source_locations : The location of the sources
+    '''
+
+    n_sources, n_mics = A.shape
+    assert A.shape == sigma.shape, 'A and sigma should have the same shape'
+    assert mics_locations.shape[1] == A.shape[0], 'The number of rows in A should be the same as the number of microphones'
+
+    n_dim = mics_locations.shape[0]
+    assert n_dim == 2 or n_dim == 3, 'Only 2D and 3D support'
+
+    # Step 1 : Initialization
+    #########################
+    var_shapes = [(n_mics), (n_sources), (n_dim, n_mics), (n_dim, n_sources), (1,), (1,)] 
+    packer = VarPacker(var_shapes)
+    x0 = packer.new_vector()
+    m0, s0, R0, X0, alpha0, scale0 = packer.unpack(x0)
+
+    alpha0[:] = 0.5
+
+    C = np.zeros((n_mics, n_sources))  # log attenuation of speaker at microphone
+    D2 = np.zeros((n_mics, n_sources))  # squared distance between speaker and microphone
+    for i in range(n_mics):
+        for j in range(n_sources):
+            if i < n_sources:
+                C[i,j] = 0.5 * (A[i,j] + A[j,i] - A[i,i] - A[j,j])
+            else:
+                C[i,j] = A[i,j] - A[j,j]
+            D2[i,j] = np.exp(-C[i,j] / alpha0[0])  # In practice, we'll need to find a way to fix the scale
+
+    # log gain of device
+    m0[0] = 0.  # i.e. m[0] = log(1)
+    for i in range(1,n_mics):
+        m0[i] = A[i,0] - A[0,0] - C[i,0] + m0[0]
+
+    # energy of speaker
+    for j in range(n_sources):
+        s0[j] = np.mean(A[:,j] - m0[:] - C[:,j])
+
+    # STEP 2 : SRLS for intial estimate of microphone locations
+    ###########################################################
+
+    # Fix microphone locations
+    R0[:,:] = mics_locations
+
+    # We can do some alternating optimization here
+    # by increasing the number of loops
+    scale = 1.
+    pre_n_iter = 3
+    for i in range(pre_n_iter):
+        # Use SRLS to find intial guess of locations
+        scalings = np.zeros(n_sources)
+        for j in range(n_sources):
+            X0[:,j], scalings[j] = rescaled_SRLS(R0.T, np.ones(n_mics), D2[:,j,None])
+            A[:,:] += alpha0[0] * np.log(scalings[j])
+
+        scale = np.sqrt(np.median(scalings))
+
+        # Reinitialize gains from the SRLS distances
+        S = A + alpha0[0] * np.log(pra.distance(R0, X0)**2)
+        m0[:], s0[:] = cdm_unfolding(1 / sigma**2, S, sum_matrix=True)
+
+        D2 = np.exp((- A + m0[:,None] + s0[None,:]) )
+
+    scale0[:] = 0.
+
+    # STEP 4 : Non-linear least-squares
+    ###################################
+
+    # Create a variable to loop over
+    x = packer.new_vector()
+    m, s, R, X, alpha, scale = packer.unpack(x)
+    x[:] = x0
+
+    # keep track of minimum
+    x_opt = packer.new_vector()
+    cost_opt = np.inf
+
+    for i in range(n_iter):
+        # noise injection
+        if i > 0:
+            m[:] += np.random.randn(*m.shape) * 0.01 * np.std(m)
+            s[:] += np.random.randn(*s.shape) * 0.01 * np.std(s)
+            X[:,:] += np.random.randn(*X.shape) * 0.30 * np.std(X)
+
+        # Non-linear least squares solver
+        res_1 = least_squares(objective, x, jac=jacobian, 
+                args=(A, sigma, packer),
+                kwargs={'fix_mic' : True, 'fix_alpha' : False, 'fix_scale' : True},
+                xtol=1e-15,
+                ftol=1e-15, 
+                max_nfev=100,
+                method='lm', 
+                verbose=verbose,
+                )
+
+        if res_1.cost < cost_opt:
+            x_opt[:] = res_1.x
+            cost_opt = res_1.cost
+
+        # use result as next initialization
+        x[:] = res_1.x
+
+    m, s, R, X, alpha, scale = packer.unpack(x_opt)
+
+    return m, s, X, X0

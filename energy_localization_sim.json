@@ -1,0 +1,31 @@
+
+{
+  "name" : "energy_localization",
+
+  "n_loops" : 1000,
+
+  "fs_sound" : 16000,
+  "fs_light" : 30,
+  "nfft" : 512,
+
+  "device_locations" : [
+            [ 1.5, 1.5 ],
+            [ 2.5, 1.5 ],
+            [ 3.5, 1.5 ],
+            [ 4.0, 2.5 ],
+            [ 3.5, 3.5 ],
+            [ 2.5, 3.5 ],
+            [ 1.5, 3.5 ],
+            [ 1.0, 2.5 ]
+            ],
+  "device_gains_db" : [ 0., 1.5, -2, -1.7, -0.5, 0.9, 2 , 0.1],
+
+  "n_sources" : 8,
+  "source_gain_range" : [-3, 3],
+  "room_dim" :[6,5],
+  "room_max_order" : 12,
+  "room_absorption" : 0.4,
+  "sigma2_noise" : 1e-5,
+
+  "energy_localization_n_iter" : 100
+}
