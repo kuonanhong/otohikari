@@ -27,14 +27,20 @@ def parallel_loop(args):
     from energy_localization_helpers import energy_localization
     from rescaled_srls import rescaled_SRLS
 
+    try:
+        import mkl
+        mkl.set_num_threads(1)
+    except:
+        pass
+
     # locations of sources and receivers
-    source_locations = args[0]
-    source_gains_db = args[1]
+    source_locations = numpy.array(args[0]).T
+    source_gains_db = numpy.array(args[1])
     n_sources = source_locations.shape[1]
 
-    device_locations = np.array(p['device_locations']).T
-    device_gains_db = np.array(p['device_gains_db'])
-    n_devices = devices.shape[1]
+    device_locations = numpy.array(p['device_locations']).T
+    device_gains_db = numpy.array(p['device_gains_db'])
+    n_devices = device_locations.shape[1]
 
     # STEP 1 : Room simulation
     # Create the room
@@ -47,15 +53,15 @@ def parallel_loop(args):
     # The active segments in seconds for each speakers
     # For now, each speaker speaks for 0.8 seconds in turn
     active_segments = [ ]
-    signals = numpy.zeros((n_devices, n_sources * fs_sound))
+    signals = numpy.zeros((n_devices, n_sources * p['fs_sound']))
     for i,loc in enumerate(source_locations.T):
 
         lo = i + 0.1
         hi = i + 0.9
         active_segments.append([lo, hi])
 
-        lo_i = int(lo * fs_sound)
-        hi_i = int(hi * fs_sound)
+        lo_i = int(lo * p['fs_sound'])
+        hi_i = int(hi * p['fs_sound'])
         gain_lin = 10**(source_gains_db[i] / 10)
         signals[i,lo_i:hi_i] = numpy.random.randn(hi_i - lo_i) * gain_lin
 
@@ -64,7 +70,7 @@ def parallel_loop(args):
 
     # sound-to-light sensor
     # we assume there is no propagation delay between speaker and sensor
-    devices = LightArray(device_locations, fs=fs_light)
+    devices = LightArray(device_locations, fs=p['fs_light'])
     room.add_microphone_array(devices)
 
     # Simulate sound transport
@@ -75,7 +81,7 @@ def parallel_loop(args):
     sigma = numpy.zeros((n_devices, n_sources))
     for i in range(n_devices):
         for j in range(n_sources):
-            lo, hi = [int(x * fs_light) for x in active_segments[j]]  # We have perfect segmentation for now
+            lo, hi = [int(x * p['fs_light']) for x in active_segments[j]]  # We have perfect segmentation for now
             A[i,j] = numpy.mean(devices.signals[i][lo:hi])  # energy is already in log domain
             sigma[i,j] = numpy.std(devices.signals[i][lo:hi])
 
@@ -96,7 +102,7 @@ def gen_args(parameters):
     import pyroomacoustics as pra
 
     room = pra.ShoeBox(parameters['room_dim'])
-    device_locations = parameters['device_locations']
+    device_locations = np.array(parameters['device_locations']).T
     n_dim = device_locations.shape[0]
     n_sources = parameters['n_sources']
 
@@ -121,7 +127,7 @@ def gen_args(parameters):
                 success = room.is_inside(candidate)
             source_locations[:,i] = candidate
 
-        args.append([source_locations, source_gains_db])
+        args.append([source_locations.T.tolist(), source_gains_db.tolist()])
 
 
     return args
