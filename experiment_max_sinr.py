@@ -90,6 +90,7 @@ def process_experiment_max_sinr(SIR, mic, args):
     p0 = speech_loc - mics_loc
     p1 = noise_loc - mics_loc
     theta_noise = np.arccos(np.inner(p0, p1) / la.norm(p0) / la.norm(p1))
+    print('Source separation', theta_noise / np.pi * 180)
 
     if mic == 'pyramic':
         I = list(range(8,16)) + list(range(24,32)) + list(range(40,48)) # flat part
@@ -107,6 +108,7 @@ def process_experiment_max_sinr(SIR, mic, args):
 
     elif mic == 'olympus':
         mics_positions = mics_geom['olympus'].copy() + mics_loc
+
 
     n_samples = audio.shape[0]  # shorthand
     n_channels = audio.shape[1]
@@ -186,10 +188,16 @@ def process_experiment_max_sinr(SIR, mic, args):
 
     out = mic_array.process()
 
+    # Signal alignment step
     ref = np.vstack([speech_ref[:,0], noise_ref[:,0]])
-    delay = int(pra.tdoa(out, speech_ref[:,0].astype(np.float)))
-    out_trunc = out[delay:delay+ref.shape[1]]
-    noise_eval = audio[:ref.shape[1],0] - out_trunc
+    # Not sure why the delay is sometimes negative here... Need to check more
+    delay = np.abs(int(pra.tdoa(out, speech_ref[:,0].astype(np.float), phat=True)))
+    if delay > 0:
+        out_trunc = out[delay:delay+ref.shape[1]]
+        noise_eval = audio[:ref.shape[1],0] - out_trunc
+    else:
+        out_trunc = np.concatenate((np.zeros(-delay), out[:ref.shape[1]+delay]))
+        noise_eval = audio[:ref.shape[1],0] - out_trunc
     sig_eval = np.vstack([out_trunc, noise_eval])
 
     # We use the BSS eval toolbox
@@ -222,6 +230,11 @@ def process_experiment_max_sinr(SIR, mic, args):
     ##########
 
     if args.plot:
+
+        plt.figure()
+        plt.plot(out_trunc)
+        plt.plot(speech_ref[:,0])
+        plt.legend(['output', 'reference'])
 
         # time axis for plotting
         led_time = np.arange(leds.shape[0]) / fs_led + 1 / (2 * fs_led)
@@ -286,6 +299,28 @@ if __name__ == '__main__':
                 sdr_o, sir_o = process_experiment_max_sinr(SIR, mic, args)
                 results[mic]['SIR_out'].append(sir_o)
                 results[mic]['SDR_out'].append(sdr_o)
+
+        import datetime
+        now = datetime.datetime.now()
+        date_str = datetime.datetime.strftime(now, '%Y%m%d-%H%M%S')
+        filename = 'figures/{}_results_experiment_sir.json'.format(date_str)
+
+        parameters = dict(
+                nfft=args.nfft,
+                vad_guard=args.vad_guard,
+                clip_gain=args.clip_gain,
+                thresh=args.thresh,
+                no_norm=args.no_norm,
+                synth_mix=args.synth_mix,
+                )
+
+        record = dict(
+                parameters=parameters,
+                results=results,
+                )
+
+        with open(filename, 'w') as f:
+            json.dump(record, f)
 
     else:
         try:
