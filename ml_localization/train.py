@@ -10,9 +10,10 @@ from chainer import training
 from chainer.training import extensions
 
 # Get the data for training
-from ml_localization import get_loc_data
+from ml_localization import get_loc_data, get_loc_perfect_model_data
 data_folder = '/data/robin/ml_loc_data'
 metadata_fn = os.path.join(data_folder, 'metadata_train_test.json')
+metadata_perfmodel_fn = os.path.join(data_folder, 'metadata_train_test_test_model_alpha_1.0.json')
 
 
 # Network definition
@@ -29,7 +30,7 @@ class MLP(chainer.Chain):
     def __call__(self, x):
         h1 = F.relu(self.l1(x))
         h2 = F.relu(self.l2(h1))
-        return F.relu(self.l3(h2))
+        return self.l3(h2)
 
 
 def main():
@@ -70,12 +71,13 @@ def main():
         model.to_gpu()  # Copy the model to the GPU
 
     # Setup an optimizer
-    optimizer = chainer.optimizers.Adam()
-    #optimizer = chainer.optimizers.MomentumSGD(lr=0.005, momentum=0.9)
+    #optimizer = chainer.optimizers.Adam()
+    optimizer = chainer.optimizers.MomentumSGD(lr=0.00105, momentum=0.9)
     optimizer.setup(model)
 
     # Load the MNIST dataset
-    train, test = get_loc_data(metadata_fn)
+    #train, test = get_loc_data(metadata_fn)
+    train, test = get_loc_perfect_model_data(metadata_perfmodel_fn)
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
     test_iter = chainer.iterators.SerialIterator(test, args.batchsize,

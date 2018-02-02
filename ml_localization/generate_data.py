@@ -7,6 +7,9 @@ import itertools, json, os
 import numpy as np
 from scipy.io import wavfile
 
+import matplotlib
+matplotlib.use('agg')
+
 import pyroomacoustics
 
 import ipyparallel as ipp
@@ -45,6 +48,24 @@ parameters = dict(
         output_file_template = 'light_{}_{}.wav',
         base_dir = os.getcwd(),
         )
+
+def energy_decay(args):
+    import numpy as np
+
+    signal = args[0]  # decay exponent
+    location = np.array(args[1])
+    index = args[2]
+
+    alpha = signal['alpha']
+    gain = signal['gain']
+
+    mic_array = np.array(parameters['mic_array']).T
+
+    g = 10**(gain / 20)
+    p =  g / np.linalg.norm(location[:,None] - mic_array, axis=0) ** alpha
+
+    return [p.tolist(), np.r_[location, g].tolist()]
+
 
 def simulate(args):
     import os, sys
@@ -103,7 +124,7 @@ def simulate(args):
 
     return metadata
 
-def generate_args(parameters):
+def generate_args(parameters, perfect_model=False, alpha=1.):
 
     # Generate the training data on a grid
     # grid the room
@@ -119,13 +140,20 @@ def generate_args(parameters):
     index = 0
     for point in grid:
         for gain in gains:
-            data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
-            train_args.append([ 
-                dict(data=data, gain = gain, label='wn'),
-                point,
-                index,
-                ])
-            index += 1
+            if perfect_model:
+                train_args.append([
+                    dict(gain=gain, label='perfect_model', alpha=alpha),
+                    point,
+                    index,
+                    ])
+            else:
+                data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
+                train_args.append([ 
+                    dict(data=data, gain = gain, label='wn'),
+                    point,
+                    index,
+                    ])
+                index += 1
 
     # Generate the test data at random locations in the room
     n_test = parameters['n_test']
@@ -134,20 +162,33 @@ def generate_args(parameters):
 
     test_args = []
     for point, gain in zip(points, gains):
-        data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
-        test_args.append([ 
-            dict(data=data, gain=gain.tolist(), label='wn',),
-            tuple(point.tolist()),
-            index,
-            ])
-        index += 1
+        if perfect_model:
+            test_args.append([
+                dict(gain=gain, label='perfect_model', alpha=alpha),
+                point,
+                index,
+                ])
+        else:
+            data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
+            test_args.append([ 
+                dict(data=data, gain=gain.tolist(), label='wn',),
+                tuple(point.tolist()),
+                index,
+                ])
+            index += 1
 
     return train_args, test_args
 
 
 if __name__ == '__main__':
 
-    train_args, test_args = generate_args(parameters)
+    import argparse
+    parser = argparse.ArgumentParser(description='Create training data for ML-based localization')
+    parser.add_argument('--perfect_model', action='store_true', help='Use a simple decay exponent rather than room simulation')
+    parser.add_argument('--alpha', type=float, default=1., help='The decay exponent for the perfect model.')
+    args = parser.parse_args()
+
+    train_args, test_args = generate_args(parameters, perfect_model=args.perfect_model, alpha=args.alpha)
 
     c = ipp.Client()
     lbv = c.load_balanced_view()
@@ -156,19 +197,34 @@ if __name__ == '__main__':
 
     toolbox = dict(
             simulate=simulate,
+            energy_decay=energy_decay,
             parameters=parameters,
             )
     _ = c[:].push(toolbox, block=True)
 
     with c[:].sync_imports():
+        import matplotlib
+
+    for engine in c:
+        engine.apply(matplotlib.use, 'agg')
+
+    with c[:].sync_imports():
         import pyroomacoustics
 
-    metadata_train = lbv.map_sync(simulate, train_args)
-    metadata_test = lbv.map_sync(simulate, test_args)
+    if args.perfect_model:
+        metadata_train = lbv.map_sync(energy_decay, train_args)
+        metadata_test = lbv.map_sync(energy_decay, test_args)
+    else:
+        metadata_train = lbv.map_sync(simulate, train_args)
+        metadata_test = lbv.map_sync(simulate, test_args)
 
     metadata = { 'train' : metadata_train, 'test' : metadata_test }
 
-    filename = os.path.join(parameters['output_dir'], 'metadata_train_test.json')
+    if args.perfect_model:
+        filename = os.path.join(parameters['output_dir'], 'metadata_train_test.json')
+    else:
+        filename = os.path.join(parameters['output_dir'], 'metadata_train_test_model_alpha{:.1f}.json'.format(args.alpha))
+
     with open(filename, 'w') as f:
         json.dump(metadata, f)
 
