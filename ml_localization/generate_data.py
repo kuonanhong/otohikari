@@ -124,6 +124,18 @@ def simulate(args):
 
     return metadata
 
+def filter_points(parameters, points):
+    '''
+    Remove points that are closer to a microphone
+    '''
+
+    mic_array = np.array(parameters['mic_array'])
+
+    dist = np.linalg.norm(points[:,None,:] - mic_array[None,:,:], axis=-1)
+    I = np.all(dist > 0.1, axis=1)
+
+    return points[I,:]
+
 def generate_args(parameters, perfect_model=False, alpha=1.):
 
     # Generate the training data on a grid
@@ -131,6 +143,7 @@ def generate_args(parameters, perfect_model=False, alpha=1.):
     step = parameters['grid_step']  # place a source every 20 cm
     pos = [np.arange(step, L - step, step) for L in parameters['room_dim']]
     grid = itertools.product(*pos)
+    grid = filter_points(parameters, np.array(list(grid)))
 
     # grid the gains
     gains = np.linspace(*parameters['gain_range'])
@@ -150,7 +163,7 @@ def generate_args(parameters, perfect_model=False, alpha=1.):
                 data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
                 train_args.append([ 
                     dict(data=data, gain = gain, label='wn'),
-                    point,
+                    tuple(point.tolist()),
                     index,
                     ])
                 index += 1
@@ -158,6 +171,7 @@ def generate_args(parameters, perfect_model=False, alpha=1.):
     # Generate the test data at random locations in the room
     n_test = parameters['n_test']
     points = np.random.rand(n_test, 2) * np.array(parameters['room_dim'])[None,:]
+    points = filter_points(parameters, points)
     gains = np.random.uniform(low=parameters['gain_range'][0], high=parameters['gain_range'][1], size=n_test)
 
     test_args = []
@@ -221,9 +235,9 @@ if __name__ == '__main__':
     metadata = { 'train' : metadata_train, 'test' : metadata_test }
 
     if args.perfect_model:
-        filename = os.path.join(parameters['output_dir'], 'metadata_train_test.json')
-    else:
         filename = os.path.join(parameters['output_dir'], 'metadata_train_test_model_alpha{:.1f}.json'.format(args.alpha))
+    else:
+        filename = os.path.join(parameters['output_dir'], 'metadata_train_test.json')
 
     with open(filename, 'w') as f:
         json.dump(metadata, f)

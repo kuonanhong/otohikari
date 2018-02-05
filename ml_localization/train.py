@@ -59,37 +59,46 @@ def main():
     print('# epoch: {}'.format(args.epoch))
     print('')
 
+    devices = {'main':0, 'second':1, 'third':2, 'fourth':3}
+    chainer.cuda.get_device_from_id(devices['main']).use()
+
     # Set up a neural network to train
-    # Classifier reports softmax cross entropy loss and accuracy at every
-    # iteration, which will be used by the PrintReport extension below.
+    # Classifier reports mean squared error
     nn = MLP(args.unit, 2)
     model = L.Classifier(nn, lossfun=F.mean_squared_error)
     model.compute_accuracy=False
-    if args.gpu >= 0:
-        # Make a specified GPU current
-        chainer.cuda.get_device_from_id(args.gpu).use()
-        model.to_gpu()  # Copy the model to the GPU
 
     # Setup an optimizer
-    #optimizer = chainer.optimizers.Adam()
-    optimizer = chainer.optimizers.MomentumSGD(lr=0.00105, momentum=0.9)
+    optimizer = chainer.optimizers.Adam()
+    #optimizer = chainer.optimizers.MomentumSGD(lr=0.01, momentum=0.9)
     optimizer.setup(model)
 
     # Load the MNIST dataset
-    #train, test = get_loc_data(metadata_fn)
-    train, test = get_loc_perfect_model_data(metadata_perfmodel_fn)
+    train, test = get_loc_data(metadata_fn)
+    #train, test = get_loc_perfect_model_data(metadata_perfmodel_fn)
+
+    print('Type of first example:', type(train[0][0]))
+    wrong_type = False
+    for example in train:
+        if type(example[0]) != type(train[0][0]):
+            wrong_type = True
+    if wrong_type:
+        print('Detected some type inconsistensies')
 
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
     test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
                                                  repeat=False, shuffle=False)
 
     # Set up a trainer
+    updater = training.ParallelUpdater(train_iter, optimizer, devices=devices)
+    '''
     updater = training.StandardUpdater(
-        train_iter, optimizer, device=args.gpu)
+        train_iter, optimizer, device=0)
+    '''
     trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
 
     # Evaluate the model with the test dataset for each epoch
-    trainer.extend(extensions.Evaluator(test_iter, model, device=args.gpu))
+    trainer.extend(extensions.Evaluator(test_iter, model, device=devices['main']))
 
     # Dump a computational graph from 'loss' variable at the first iteration
     # The "main" refers to the target link of the "main" optimizer.

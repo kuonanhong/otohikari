@@ -13,15 +13,16 @@ def read_data(data_list):
     for sample in data_list:
 
         _, data = wavfile.read(sample['filename'])
-        avg = data[-16:-1,:].mean(axis=0, keepdims=True)
+        avg = (10 ** (data[-16:-1,:] / 20)).mean(axis=0, keepdims=True)
+        avg /= avg.max()
         
-        if np.any(np.isnan(avg)):
+        if np.any(np.isnan(avg)) or np.any(np.isinf(avg)):
             print('Skip a sample with nan')
             continue
 
         dataset.append(
                 # It is important that this is a *tuple*!
-                (cu.array(avg.tolist(), dtype=np.float32), cu.array(sample['location'], dtype=np.float32),)
+                (np.array(avg.tolist(), dtype=np.float32), np.array(sample['location'], dtype=np.float32),)
                 )
 
     return dataset
@@ -47,8 +48,8 @@ def get_loc_perfect_model_data(metadata_file):
     def format_examples(examples):
         formated_examples = []
         for example in examples:
-            example[0] = cu.array(example[0], dtype=np.float32)
-            example[1] = cu.array(example[1][:-1], dtype=np.float32)
+            example[0] = cu.array(example[0], dtype=np.float32)[None,:]
+            example[1] = cu.array(example[1][:-1], dtype=np.float32)[None,:]
 
             if not (cu.all(cu.isfinite(example[0])) and cu.all(cu.isfinite(example[1]))) or cu.any(example[0] > 1000.):
                 print('skip nan')
