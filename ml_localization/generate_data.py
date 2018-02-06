@@ -122,7 +122,7 @@ def simulate(args):
     metadata['location'] = location
     metadata['filename'] = filename
 
-    return metadata
+    return [room.mic_array.signals.T.tolist(), np.r_[location, signal['gain']].tolist()]
 
 def filter_points(parameters, points):
     '''
