@@ -2,7 +2,8 @@
 import argparse
 import numpy as np
 
-from utilities import OnlineStats, ffmpeg_open_raw_video, ffmpeg_open_raw_audio
+from utilities import ffmpeg_open_raw_video, ffmpeg_open_raw_audio
+from streaming import OnlineStats
 from check_calibration import check_calibration
 
 parser = argparse.ArgumentParser()
