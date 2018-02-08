@@ -3,6 +3,8 @@ from __future__ import print_function
 
 import argparse, os
 
+import numpy as np
+
 import chainer
 import chainer.functions as F
 import chainer.links as L
@@ -10,7 +12,7 @@ from chainer import training
 from chainer.training import extensions
 
 # Get the data for training
-from ml_localization import get_loc_data, get_loc_perfect_model_data
+from ml_localization import get_data
 data_folder = '/data/robin/ml_loc_data'
 metadata_fn = os.path.join(data_folder, 'metadata_train_test.json')
 metadata_perfmodel_fn = os.path.join(data_folder, 'metadata_train_test_test_model_alpha_1.0.json')
@@ -51,6 +53,7 @@ def main():
                         help='Number of units')
     parser.add_argument('--noplot', dest='plot', action='store_false',
                         help='Disable PlotReport extension')
+    parser.add_argument('--perfect_model', action='store_true', help='Use the perfect model data.')
     args = parser.parse_args()
 
     print('GPU: {}'.format(args.gpu))
@@ -73,9 +76,29 @@ def main():
     #optimizer = chainer.optimizers.MomentumSGD(lr=0.01, momentum=0.9)
     optimizer.setup(model)
 
-    # Load the MNIST dataset
-    train, test = get_loc_data(metadata_fn)
-    #train, test = get_loc_perfect_model_data(metadata_perfmodel_fn)
+    # Helper to load the dataset
+    if args.perfect_model:
+        def data_formatter(e):
+            return np.array(e, dtype=np.float32)[None,:]
+    else:
+        def data_formatter(e):
+            #return np.array(e, dtype=np.float32)[1:16,:].mean(axis=0, keepdims=True)
+            #return np.array(e, dtype=np.float32)[1:16,:].reshape((1,-1))
+            return np.array(e, dtype=np.float32)[1:5,:].mean(axis=0, keepdims=True)
+
+    def label_formatter(l):
+        return np.array(l[:2], dtype=np.float32)
+
+    def skip (e):
+        all_finite = np.all(np.isfinite(e[0])) and np.all(np.isfinite(e[1]))
+        return not (all_finite and np.all(e[0] < 1000.))
+
+    fn = metadata_perfmodel_fn if args.perfect_model else metadata_fn
+
+    # Load the dataset
+    train, test = get_data(fn,
+            data_formatter=data_formatter, 
+            label_formatter=label_formatter, skip=skip)
 
     print('Type of first example:', type(train[0][0]))
     wrong_type = False

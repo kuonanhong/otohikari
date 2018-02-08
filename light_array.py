@@ -139,7 +139,7 @@ class LightArrayMovingAverage(pra.MicrophoneArray):
         '''
 
         # running average of power
-        pwr = (signals - np.mean(signals, axis=1, keepdims=True)) ** 2
+        pwr = (0.5 * (signals[:,1:] + signals[:,:-1]) - np.mean(signals, axis=1, keepdims=True)) ** 2
 
         # the fractional downsampling
         frac_len = fs / self.fs

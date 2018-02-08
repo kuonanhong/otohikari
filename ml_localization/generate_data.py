@@ -3,6 +3,7 @@ This script generates simulated power intensity data to train
 a localization network.
 '''
 import itertools, json, os
+import datetime
 
 import numpy as np
 from scipy.io import wavfile
@@ -16,19 +17,22 @@ import ipyparallel as ipp
 from joblib import Parallel, delayed
 from functools import partial
 
+import jsongzip
+
 parameters = dict(
         # simulation parameters
         sample_length = 0.5,      # length of audio sample in seconds
         gain_range = [-3., 3., 5],  # source gains, 5 points from -3dB to 3dB
+        noise_var = [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
         grid_step = 0.05,
-        n_test = 1000,
+        n_test = 100,            # number of validation points
+        n_validation = 1000,
 
         # room parameters
         room_dim = [6,5],
         fs_sound = 16000,
         max_order = 12,
-        absorption = 0.4,
-        sigma2_awgn = 0.4,
+        absorption = 0.2,
 
         # light array parameters
         mic_array = [
@@ -74,13 +78,13 @@ def simulate(args):
 
     signal = args[0]
     location = args[1]
-    index = args[2]
+    noise_var = args[2]
+    index = args[3]
 
     room_dim = parameters['room_dim']
     fs_sound = parameters['fs_sound']
     max_order = parameters['max_order']
     abosrption = parameters['absorption']
-    sigma2_awgn = parameters['sigma2_awgn']
     mic_array = parameters['mic_array']
     fs_light = parameters['fs_light']
     output_dir = parameters['output_dir']
@@ -96,7 +100,7 @@ def simulate(args):
             fs=fs_sound,
             max_order=max_order,
             absorption=abosrption,
-            sigma2_awgn=sigma2_awgn)
+            sigma2_awgn=noise_var)
 
     room.add_source(location)
 
@@ -122,7 +126,7 @@ def simulate(args):
     metadata['location'] = location
     metadata['filename'] = filename
 
-    return [room.mic_array.signals.T.tolist(), np.r_[location, signal['gain']].tolist()]
+    return [room.mic_array.signals.T.tolist(), np.r_[location, signal['gain'], noise_var].tolist()]
 
 def filter_points(parameters, points):
     '''
@@ -157,6 +161,7 @@ def generate_args(parameters, perfect_model=False, alpha=1.):
                 train_args.append([
                     dict(gain=gain, label='perfect_model', alpha=alpha),
                     point,
+                    0.,  # no noise
                     index,
                     ])
             else:
@@ -164,11 +169,37 @@ def generate_args(parameters, perfect_model=False, alpha=1.):
                 train_args.append([ 
                     dict(data=data, gain = gain, label='wn'),
                     tuple(point.tolist()),
+                    0.,  # no noise
                     index,
                     ])
                 index += 1
 
-    # Generate the test data at random locations in the room
+    # Generate the validation data at random locations in the room
+    n_validation = parameters['n_validation']
+    points = np.random.rand(n_validation, 2) * np.array(parameters['room_dim'])[None,:]
+    points = filter_points(parameters, points)
+    gains = np.random.uniform(low=parameters['gain_range'][0], high=parameters['gain_range'][1], size=n_validation)
+
+    validation_args = []
+    for point, gain in zip(points, gains):
+        if perfect_model:
+            validation_args.append([
+                dict(gain=gain, label='perfect_model', alpha=alpha),
+                point,
+                0.,  # no noise
+                index,
+                ])
+        else:
+            data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
+            validation_args.append([ 
+                dict(data=data, gain=gain.tolist(), label='wn',),
+                tuple(point.tolist()),
+                0.,  # no noise
+                index,
+                ])
+            index += 1
+
+    # Generate the test data with various levels of noise
     n_test = parameters['n_test']
     points = np.random.rand(n_test, 2) * np.array(parameters['room_dim'])[None,:]
     points = filter_points(parameters, points)
@@ -176,22 +207,25 @@ def generate_args(parameters, perfect_model=False, alpha=1.):
 
     test_args = []
     for point, gain in zip(points, gains):
-        if perfect_model:
-            test_args.append([
-                dict(gain=gain, label='perfect_model', alpha=alpha),
-                point,
-                index,
-                ])
-        else:
-            data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
-            test_args.append([ 
-                dict(data=data, gain=gain.tolist(), label='wn',),
-                tuple(point.tolist()),
-                index,
-                ])
-            index += 1
+        for var in parameters['noise_var']:
+            if perfect_model:
+                test_args.append([
+                    dict(gain=gain, label='perfect_model', alpha=alpha),
+                    point,
+                    var,
+                    index,
+                    ])
+            else:
+                data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
+                test_args.append([ 
+                    dict(data=data, gain=gain.tolist(), label='wn',),
+                    tuple(point.tolist()),
+                    var,
+                    index,
+                    ])
+                index += 1
 
-    return train_args, test_args
+    return train_args, validation_args, test_args
 
 
 if __name__ == '__main__':
@@ -202,7 +236,7 @@ if __name__ == '__main__':
     parser.add_argument('--alpha', type=float, default=1., help='The decay exponent for the perfect model.')
     args = parser.parse_args()
 
-    train_args, test_args = generate_args(parameters, perfect_model=args.perfect_model, alpha=args.alpha)
+    train_args, validate_args, test_args = generate_args(parameters, perfect_model=args.perfect_model, alpha=args.alpha)
 
     c = ipp.Client()
     lbv = c.load_balanced_view()
@@ -227,18 +261,23 @@ if __name__ == '__main__':
 
     if args.perfect_model:
         metadata_train = lbv.map_sync(energy_decay, train_args)
+        metadata_validate = lbv.map_sync(energy_decay, validate_args)
         metadata_test = lbv.map_sync(energy_decay, test_args)
     else:
         metadata_train = lbv.map_sync(simulate, train_args)
+        metadata_validate = lbv.map_sync(simulate, validate_args)
         metadata_test = lbv.map_sync(simulate, test_args)
 
-    metadata = { 'train' : metadata_train, 'test' : metadata_test }
+    metadata = { 'parameters' : parameters, 'train' : metadata_train, 'validation' : metadata_validate, 'test' : metadata_test }
+
+    now = datetime.datetime.now()
+    timestamp = datetime.datetime.strftime(now, '%Y%m%d-%H%M%S')
 
     if args.perfect_model:
         filename = os.path.join(parameters['output_dir'], 'metadata_train_test_model_alpha{:.1f}.json'.format(args.alpha))
     else:
-        filename = os.path.join(parameters['output_dir'], 'metadata_train_test.json')
+        filename = os.path.join(parameters['output_dir'], '{}_metadata_train_test.json'.format(timestamp))
 
-    with open(filename, 'w') as f:
-        json.dump(metadata, f)
+    # save to gzipped json file
+    jsongzip.dump(filename, metadata)
 
