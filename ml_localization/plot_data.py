@@ -57,7 +57,7 @@ if __name__ == '__main__':
             return np.array(e, dtype=np.float32)[None,:]
     else:
         def data_formatter(e):
-            return np.array(e, dtype=np.float32)[1:16,:].mean(axis=1, keepdims=True)
+            return np.array(e, dtype=np.float32)[1:16,:].mean(axis=0, keepdims=True)
 
     def label_formatter(l):
         return np.array(l, dtype=np.float32)[None,:]
