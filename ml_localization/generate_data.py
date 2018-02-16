@@ -116,10 +116,6 @@ def simulate(args):
     # Simulate sound transport
     room.simulate()
 
-    # save the output
-    filename = os.path.join(output_dir, output_file_template.format(signal['label'], index))
-    wavfile.write(filename, fs_light, room.mic_array.signals.T)
-
     # add the filename to the dictionary
     metadata = signal.copy()
     metadata.pop('data')  # remove the data array

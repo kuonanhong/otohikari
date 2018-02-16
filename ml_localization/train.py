@@ -12,27 +12,11 @@ from chainer import training
 from chainer.training import extensions
 
 # Get the data for training
-from ml_localization import get_data
+from ml_localization import get_data, models, get_formatters
+
 data_folder = '/data/robin/ml_loc_data'
-metadata_fn = os.path.join(data_folder, 'metadata_train_test.json')
+metadata_fn = os.path.join(data_folder, '20180208-172045_metadata_train_test.json.gz')
 metadata_perfmodel_fn = os.path.join(data_folder, 'metadata_train_test_test_model_alpha_1.0.json')
-
-
-# Network definition
-class MLP(chainer.Chain):
-
-    def __init__(self, n_units, n_out):
-        super(MLP, self).__init__()
-        with self.init_scope():
-            # the size of the inputs to each layer will be inferred
-            self.l1 = L.Linear(None, n_units)  # n_in -> n_units
-            self.l2 = L.Linear(n_units, n_units)  # n_units -> n_units
-            self.l3 = L.Linear(n_units, n_out)  # n_units -> n_out
-
-    def __call__(self, x):
-        h1 = F.relu(self.l1(x))
-        h2 = F.relu(self.l2(h1))
-        return self.l3(h2)
 
 
 def main():
@@ -67,61 +51,36 @@ def main():
 
     # Set up a neural network to train
     # Classifier reports mean squared error
-    nn = MLP(args.unit, 2)
+    nn = models['model1'](args.unit, 2)
     model = L.Classifier(nn, lossfun=F.mean_squared_error)
     model.compute_accuracy=False
 
     # Setup an optimizer
     optimizer = chainer.optimizers.Adam()
-    #optimizer = chainer.optimizers.MomentumSGD(lr=0.01, momentum=0.9)
+    #optimizer = chainer.optimizers.AdaGrad(lr=0.01)
+    #optimizer = chainer.optimizers.MomentumSGD(lr=0.000001, momentum=0.9)
     optimizer.setup(model)
 
     # Helper to load the dataset
-    if args.perfect_model:
-        def data_formatter(e):
-            return np.array(e, dtype=np.float32)[None,:]
-    else:
-        def data_formatter(e):
-            #return np.array(e, dtype=np.float32)[1:16,:].mean(axis=0, keepdims=True)
-            #return np.array(e, dtype=np.float32)[1:16,:].reshape((1,-1))
-            return np.array(e, dtype=np.float32)[1:5,:].mean(axis=0, keepdims=True)
-
-    def label_formatter(l):
-        return np.array(l[:2], dtype=np.float32)
-
-    def skip (e):
-        all_finite = np.all(np.isfinite(e[0])) and np.all(np.isfinite(e[1]))
-        return not (all_finite and np.all(e[0] < 1000.))
+    data_formatter, label_formatter, skip = get_formatters(method='reshape', n_frames=4)
 
     fn = metadata_perfmodel_fn if args.perfect_model else metadata_fn
 
     # Load the dataset
-    train, test = get_data(fn,
+    train, validate, test = get_data(fn,
             data_formatter=data_formatter, 
             label_formatter=label_formatter, skip=skip)
 
-    print('Type of first example:', type(train[0][0]))
-    wrong_type = False
-    for example in train:
-        if type(example[0]) != type(train[0][0]):
-            wrong_type = True
-    if wrong_type:
-        print('Detected some type inconsistensies')
-
     train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
-    test_iter = chainer.iterators.SerialIterator(test, args.batchsize,
+    validate_iter = chainer.iterators.SerialIterator(validate, args.batchsize,
                                                  repeat=False, shuffle=False)
 
     # Set up a trainer
     updater = training.ParallelUpdater(train_iter, optimizer, devices=devices)
-    '''
-    updater = training.StandardUpdater(
-        train_iter, optimizer, device=0)
-    '''
     trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
 
     # Evaluate the model with the test dataset for each epoch
-    trainer.extend(extensions.Evaluator(test_iter, model, device=devices['main']))
+    trainer.extend(extensions.Evaluator(validate_iter, model, device=devices['main']))
 
     # Dump a computational graph from 'loss' variable at the first iteration
     # The "main" refers to the target link of the "main" optimizer.
