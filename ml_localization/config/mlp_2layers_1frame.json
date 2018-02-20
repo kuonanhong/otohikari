@@ -1,0 +1,26 @@
+{
+  "name" : "MLP_2layers_avg",
+
+  "description" : "Multi-layer perceptron with 2 layers, each half the nodes of the previous one.",
+
+  "training" : {
+    "batchsize" : 10000,
+    "epoch" : 10000
+  },
+
+  "model" : {
+    "name" : "model1",
+    "args" : [100, 2],
+    "kwargs" : {},
+    "file" : "ml_localization/models/mlp_loc_abs_4_frames.npz"
+  },
+
+  "data" : {
+    "file" : "/data/robin/ml_loc_data/20180208-172045_metadata_train_test.json.gz",
+    "format_kwargs" : {
+      "method" : "avg",
+      "frames" : [1, 16],
+      "outputs" : [0, 2]
+    }
+  }
+}

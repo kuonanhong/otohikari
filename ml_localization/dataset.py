@@ -25,7 +25,7 @@ def get_formatters(method='reshape', frames=(1,16), outputs=(0,2)):
     elif method == 'avg':
 
         def data_formatter(e):
-            return np.array(e, dtype=np.float32)[slice(*frames),:].mean(axis=1, keepdims=True)
+            return np.array(e, dtype=np.float32)[slice(*frames),:].mean(axis=0, keepdims=True)
 
     def label_formatter(l):
         return np.array(l[slice(*outputs)], dtype=np.float32)

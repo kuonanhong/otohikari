@@ -5,6 +5,7 @@ import argparse, os
 
 import numpy as np
 
+import json
 import chainer
 import chainer.functions as F
 import chainer.links as L
@@ -20,30 +21,28 @@ metadata_perfmodel_fn = os.path.join(data_folder, 'metadata_train_test_test_mode
 
 
 def main():
-    parser = argparse.ArgumentParser(description='Chainer example: MNIST')
+    parser = argparse.ArgumentParser(description='Training of fully conncted newtork for indoor acoustic localization.')
+    parser.add_argument('config', type=str, help="The config file for the training, model, and data.")
     parser.add_argument('--batchsize', '-b', type=int, default=100,
                         help='Number of images in each mini-batch')
-    parser.add_argument('--epoch', '-e', type=int, default=20,
-                        help='Number of sweeps over the dataset to train')
     parser.add_argument('--frequency', '-f', type=int, default=-1,
                         help='Frequency of taking a snapshot')
-    parser.add_argument('--gpu', '-g', type=int, default=-1,
-                        help='GPU ID (negative value indicates CPU)')
     parser.add_argument('--out', '-o', default='result',
                         help='Directory to output the result')
     parser.add_argument('--resume', '-r', default='',
                         help='Resume the training from snapshot')
-    parser.add_argument('--unit', '-u', type=int, default=1000,
-                        help='Number of units')
     parser.add_argument('--noplot', dest='plot', action='store_false',
                         help='Disable PlotReport extension')
-    parser.add_argument('--perfect_model', action='store_true', help='Use the perfect model data.')
     args = parser.parse_args()
 
-    print('GPU: {}'.format(args.gpu))
-    print('# unit: {}'.format(args.unit))
-    print('# Minibatch-size: {}'.format(args.batchsize))
-    print('# epoch: {}'.format(args.epoch))
+    with open(args.config, 'r') as f:
+        config = json.load(f)
+
+    epoch = config['training']['epoch']
+    batchsize = config['training']['batchsize']
+
+    print('# Minibatch-size: {}'.format(batchsize))
+    print('# epoch: {}'.format(epoch))
     print('')
 
     devices = {'main':0, 'second':1, 'third':2, 'fourth':3}
@@ -51,33 +50,34 @@ def main():
 
     # Set up a neural network to train
     # Classifier reports mean squared error
-    nn = models['model1'](args.unit, 2)
+    nn = models[config['model']['name']](
+            *config['model']['args'],
+            **config['model']['kwargs'],
+            )
+
     model = L.Classifier(nn, lossfun=F.mean_squared_error)
     model.compute_accuracy=False
 
     # Setup an optimizer
     optimizer = chainer.optimizers.Adam()
-    #optimizer = chainer.optimizers.AdaGrad(lr=0.01)
-    #optimizer = chainer.optimizers.MomentumSGD(lr=0.000001, momentum=0.9)
     optimizer.setup(model)
 
     # Helper to load the dataset
-    data_formatter, label_formatter, skip = get_formatters(method='reshape', n_frames=4)
-
-    fn = metadata_perfmodel_fn if args.perfect_model else metadata_fn
+    data_formatter, label_formatter, skip = get_formatters(**config['data']['format_kwargs'])
 
     # Load the dataset
-    train, validate, test = get_data(fn,
+    train, validate, test = get_data(config['data']['file'],
             data_formatter=data_formatter, 
             label_formatter=label_formatter, skip=skip)
 
-    train_iter = chainer.iterators.SerialIterator(train, args.batchsize)
-    validate_iter = chainer.iterators.SerialIterator(validate, args.batchsize,
+    train_iter = chainer.iterators.SerialIterator(train, batchsize)
+    validate_iter = chainer.iterators.SerialIterator(validate, batchsize,
                                                  repeat=False, shuffle=False)
 
     # Set up a trainer
     updater = training.ParallelUpdater(train_iter, optimizer, devices=devices)
-    trainer = training.Trainer(updater, (args.epoch, 'epoch'), out=args.out)
+    #updater = training.StandardUpdater(train_iter, optimizer, device=devices['main'])
+    trainer = training.Trainer(updater, (epoch, 'epoch'), out=args.out)
 
     # Evaluate the model with the test dataset for each epoch
     trainer.extend(extensions.Evaluator(validate_iter, model, device=devices['main']))
@@ -87,7 +87,7 @@ def main():
     trainer.extend(extensions.dump_graph('main/loss'))
 
     # Take a snapshot for each specified epoch
-    frequency = args.epoch if args.frequency == -1 else max(1, args.frequency)
+    frequency = epoch if args.frequency == -1 else max(1, args.frequency)
     trainer.extend(extensions.snapshot(), trigger=(frequency, 'epoch'))
 
     # Write a log of evaluation statistics for each epoch
@@ -121,6 +121,9 @@ def main():
 
     # Run the training
     trainer.run()
+
+    # save the trained model
+    chainer.serializers.save_npz(config['model']['file'], nn)
 
     return nn, train, test
 
