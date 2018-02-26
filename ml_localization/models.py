@@ -2,40 +2,6 @@ import chainer
 import chainer.functions as F
 import chainer.links as L
 
-# Network definition
-class MLP1(chainer.Chain):
-
-    def __init__(self, n_units, n_out):
-        super(MLP1, self).__init__()
-        with self.init_scope():
-            # the size of the inputs to each layer will be inferred
-            self.l1 = L.Linear(None, n_units)  # n_in -> n_units
-            self.l2 = L.Linear(n_units, n_units)  # n_units -> n_units
-            self.l3 = L.Linear(n_units, n_out)  # n_units -> n_out
-
-    def __call__(self, x):
-        h1 = F.relu(self.l1(x))
-        h2 = F.relu(self.l2(h1))
-        return self.l3(h2)
-
-# Network definition
-class MLP2(chainer.Chain):
-
-    def __init__(self, n_units, n_out):
-        super(MLP2, self).__init__()
-        with self.init_scope():
-            # the size of the inputs to each layer will be inferred
-            self.l1 = L.Linear(None, n_units)  # n_in -> n_units
-            self.l2 = L.Linear(n_units, n_units // 2)  # n_units -> n_units
-            self.l3 = L.Linear(n_units // 2, n_units // 4)  # n_units -> n_units
-            self.l4 = L.Linear(n_units // 4, n_out)  # n_units -> n_out
-
-    def __call__(self, x):
-        h1 = F.relu(self.l1(x))
-        h2 = F.relu(self.l2(h1))
-        h3 = F.relu(self.l3(h2))
-        return self.l4(h3)
-
 class MLP(chainer.Chain):
     '''
     Multi-Layer Perceptron with variable number of layers
@@ -57,9 +23,8 @@ class MLP(chainer.Chain):
 
             # All the hidden layers
             self.weights = chainer.ChainList(
-                    [ L.Linear(l_in, l_out) for l_in, l_out in zip(layers[:-1],layers[1:]) ]
+                    *[ L.Linear(l_in, l_out) for l_in, l_out in zip(layers[:-1],layers[1:]) ]
                     )
-                self.weights.append()
 
     def __call__(self, x):
         h = x
@@ -68,17 +33,54 @@ class MLP(chainer.Chain):
             h = F.relu(h)
         return self.weights[-1](h)
 
-    def to_gpu(self):
-        '''
-        We need to overload this to let chainer
-        know about all the Linear objects in the list
-        '''
-        for W in self.weights:
-            W.to_gpu()
+
+class ResBlock(chainer.Chain):
+    '''
+    A two layers residual block
+
+    Parameters
+    ----------
+    n: int
+        the width of the block
+    '''
+
+    def __init__(self, n):
+        super(ResBlock, self).__init__()
+        with self.init_scope():
+
+            self.hidden1 = L.Linear(n, n)
+            self.hidden2 = L.Linear(n, n)
+
+    def __call__(self, x):
+        h = x
+        h = F.relu(self.hidden1(h))
+        h = self.hidden2(h)
+
+        return x + h
+
+class ResReg(chainer.Chain):
+
+    def __init__(self, n_res, n_hidden, n_out):
+        super(ResReg, self).__init__()
+        with self.init_scope():
+
+            self.input = L.Linear(None, n_hidden)
+            self.res_blocks = chainer.ChainList(
+                    *[ResBlock(n_hidden) for n in range(n_res)]
+                    )
+            self.output = L.Linear(n_hidden, n_out)
+
+    def __call__(self, x):
+
+        h = F.relu(self.input(x))
+
+        for R in self.res_blocks:
+            h = F.relu(R(h))
+
+        return self.output(h)
 
 
 models = dict(
-        model1=MLP1,
-        model2=MLP2,
         MLP=MLP,
+        ResReg=ResReg,
         )

@@ -9,8 +9,8 @@
   },
 
   "model" : {
-    "name" : "model1",
-    "args" : [100, 2],
+    "name" : "MLP",
+    "args" : [[100, 100], 2],
     "kwargs" : {},
     "file" : "ml_localization/models/mlp_loc_abs_4_frames.npz"
   },

@@ -53,23 +53,42 @@ parameters = dict(
         base_dir = os.getcwd(),
         )
 
-def energy_decay(args):
-    import numpy as np
+def split_speakers(seed=0, split=None):
+    '''
+    Split the speakers into train/validate/test
 
-    signal = args[0]  # decay exponent
-    location = np.array(args[1])
-    index = args[2]
+    Parameters
+    ----------
+    seed: int
+        De-randomize by fixing the seed
+    split: list of 3 int
+        List containing the number of speakers to
+        use in train/validate/test (in that order)
+    '''
+    import random
 
-    alpha = signal['alpha']
-    gain = signal['gain']
+    if split is None:
+        split = { 'train' : 2, 'validate' : 2, 'test' : 3 }
 
-    mic_array = np.array(parameters['mic_array']).T
+    speakers = pyroomacoustics.datasets.cmu_arctic_speakers
 
-    g = 10**(gain / 20)
-    p =  g / np.linalg.norm(location[:,None] - mic_array, axis=0) ** alpha
+    # split male/female speakers to ensure good ratios
+    spkr_f = list(filter(lambda s : speakers[s]['sex'] == 'female', speakers))
+    spkr_m = list(filter(lambda s : speakers[s]['sex'] == 'male', speakers))
 
-    return [p.tolist(), np.r_[location, g].tolist()]
+    random.seed(seed)
+    random.shuffle(spkr_m)
+    random.shuffle(spkr_f)
 
+    pick = lambda L,n : [L.pop() for i in range(n)]
+
+    sets = {
+            'train' : pick(spkr_m, split['train']) + pick(spkr_f, split['train']),
+            'validate' : pick(spkr_m, split['validate']) + pick(spkr_f, split['validate']),
+            'test' : pick(spkr_m, split['test']) + pick(spkr_f, split['test']),
+            }
+
+    return sets
 
 def simulate(args):
     import os, sys
@@ -124,19 +143,19 @@ def simulate(args):
 
     return [room.mic_array.signals.T.tolist(), np.r_[location, signal['gain'], noise_var].tolist()]
 
-def filter_points(parameters, points):
+def filter_points(parameters, points, min_dist=0.1):
     '''
-    Remove points that are closer to a microphone
+    Remove points that are too close to a microphone
     '''
 
     mic_array = np.array(parameters['mic_array'])
 
     dist = np.linalg.norm(points[:,None,:] - mic_array[None,:,:], axis=-1)
-    I = np.all(dist > 0.1, axis=1)
+    I = np.all(dist > min_dist, axis=1)
 
     return points[I,:]
 
-def generate_args(parameters, perfect_model=False, alpha=1.):
+def generate_args(parameters, sound_type='wn'):
 
     # Generate the training data on a grid
     # grid the room
@@ -153,22 +172,14 @@ def generate_args(parameters, perfect_model=False, alpha=1.):
     index = 0
     for point in grid:
         for gain in gains:
-            if perfect_model:
-                train_args.append([
-                    dict(gain=gain, label='perfect_model', alpha=alpha),
-                    point,
-                    0.,  # no noise
-                    index,
-                    ])
-            else:
-                data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
-                train_args.append([ 
-                    dict(data=data, gain = gain, label='wn'),
-                    tuple(point.tolist()),
-                    0.,  # no noise
-                    index,
-                    ])
-                index += 1
+            data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
+            train_args.append([ 
+                dict(data=data, gain = gain, label='wn'),
+                tuple(point.tolist()),
+                0.,  # no noise
+                index,
+                ])
+            index += 1
 
     # Generate the validation data at random locations in the room
     n_validation = parameters['n_validation']
@@ -178,22 +189,14 @@ def generate_args(parameters, perfect_model=False, alpha=1.):
 
     validation_args = []
     for point, gain in zip(points, gains):
-        if perfect_model:
-            validation_args.append([
-                dict(gain=gain, label='perfect_model', alpha=alpha),
-                point,
-                0.,  # no noise
-                index,
-                ])
-        else:
-            data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
-            validation_args.append([ 
-                dict(data=data, gain=gain.tolist(), label='wn',),
-                tuple(point.tolist()),
-                0.,  # no noise
-                index,
-                ])
-            index += 1
+        data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
+        validation_args.append([ 
+            dict(data=data, gain=gain.tolist(), label='wn',),
+            tuple(point.tolist()),
+            0.,  # no noise
+            index,
+            ])
+        index += 1
 
     # Generate the test data with various levels of noise
     n_test = parameters['n_test']
@@ -204,22 +207,14 @@ def generate_args(parameters, perfect_model=False, alpha=1.):
     test_args = []
     for point, gain in zip(points, gains):
         for var in parameters['noise_var']:
-            if perfect_model:
-                test_args.append([
-                    dict(gain=gain, label='perfect_model', alpha=alpha),
-                    point,
-                    var,
-                    index,
-                    ])
-            else:
-                data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
-                test_args.append([ 
-                    dict(data=data, gain=gain.tolist(), label='wn',),
-                    tuple(point.tolist()),
-                    var,
-                    index,
-                    ])
-                index += 1
+            data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
+            test_args.append([ 
+                dict(data=data, gain=gain.tolist(), label='wn',),
+                tuple(point.tolist()),
+                var,
+                index,
+                ])
+            index += 1
 
     return train_args, validation_args, test_args
 

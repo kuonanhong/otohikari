@@ -45,7 +45,7 @@ def main():
     print('# epoch: {}'.format(epoch))
     print('')
 
-    devices = {'main':0, 'second':1, 'third':2, 'fourth':3}
+    devices = {'main':0, 'second':2, 'third':3, 'fourth':4, 'fifth':5}
     chainer.cuda.get_device_from_id(devices['main']).use()
 
     # Set up a neural network to train
@@ -56,6 +56,7 @@ def main():
             )
 
     model = L.Classifier(nn, lossfun=F.mean_squared_error)
+    #model = L.Classifier(nn, lossfun=F.mean_absolute_error)
     model.compute_accuracy=False
 
     # Setup an optimizer
@@ -75,8 +76,8 @@ def main():
                                                  repeat=False, shuffle=False)
 
     # Set up a trainer
-    updater = training.ParallelUpdater(train_iter, optimizer, devices=devices)
-    #updater = training.StandardUpdater(train_iter, optimizer, device=devices['main'])
+    #updater = training.ParallelUpdater(train_iter, optimizer, devices=devices)
+    updater = training.StandardUpdater(train_iter, optimizer, device=devices['main'])
     trainer = training.Trainer(updater, (epoch, 'epoch'), out=args.out)
 
     # Evaluate the model with the test dataset for each epoch
