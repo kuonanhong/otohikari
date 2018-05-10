@@ -90,34 +90,9 @@ if __name__ == '__main__':
     len = len(values[:,...])
     t = [i/data[c]["fps"] for i in range(len)]
 
-    #least_square_fitting(t, values[...,data[c]["color_num"]], f_dim, c)
+    least_square_fitting(t, values[...,data[c]["color_num"]], f_dim, c)
 
-    frlen = 1024
-    frsht = frlen // 2
-    win = pra.hann(frlen)
 
-    s_values = stft.stft(values[...,0], frlen, frsht, win=win)
-
-    '''
-
-    R = 50
-    n_iter = 300
-
-    nmf_value = NMF(values[...,data[c]["color_num"]], R=R, n_iter=n_iter)
-
-    for i in range(3):
-        print(i, np.shape(nmf_value[i]))
-
-    a = librosa.istft(nmf_db[1][0,:] * (np.cos(np.angle(S_db) + 1j * np.sin(np.angle(S_db)))))
-    b = librosa.istft(nmf_db[1][1,:] * (np.cos(np.angle(S_db) + 1j * np.sin(np.angle(S_db)))))
-
-    plt.subplot(211)
-    plt.plot(remixed_d)
-    plt.subplot(212)
-    plt.plot(remixed_b)
-    plt.tight_layout()
-    plt.show()
-''
     R = plt.plot(t, values[...,0], label = 'Red')
     G = plt.plot(t, values[...,1], label = 'Green')
     B = plt.plot(t, values[...,2], label = 'Blue')
@@ -127,4 +102,3 @@ if __name__ == '__main__':
     plt.legend()
     plt.xlim(0, t[-1])
     plt.show()
-'''
