@@ -1,0 +1,45 @@
+{
+    "white" : {
+
+        "video_file" : "video/20180507_led_calibration_2.AVI",
+        "image_file" : "image/20180507_led_calibration_2/access_white.png",
+        "fps" : 30.0,
+        "h" : 10,
+        "w" : 10,
+        "start" : 1552,
+        "end" : 3517
+    },
+      "blue" : {
+
+          "video_file" : "video/20180507_led_calibration_2.AVI",
+          "image_file" : "image/20180507_led_calibration_2/access_blue.png",
+          "fps" : 30.0,
+          "h" : 10,
+          "w" : 10,
+          "start" : 3518,
+          "end" : 5483,
+          "color_num" : 2
+      },
+        "green" : {
+
+            "video_file" : "video/20180507_led_calibration_2.AVI",
+            "image_file" : "image/20180507_led_calibration_2/access_green.png",
+            "fps" : 30.0,
+            "h" : 10,
+            "w" : 10,
+            "start" : 5484,
+            "end" : 7449,
+            "color_num" : 1
+        },
+        "red" : {
+
+            "video_file" : "video/20180507_led_calibration_2.AVI",
+            "image_file" : "image/20180507_led_calibration_2/access_red.png",
+            "fps" : 30.0,
+            "h" : 10,
+            "w" : 10,
+            "start" : 7450,
+            "end" : 9415,
+            "color_num" : 0
+        }
+}
