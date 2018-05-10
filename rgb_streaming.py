@@ -86,8 +86,8 @@ class PixelCatcher(object):
             The stack of frames
         '''
 
-        vals = [frames[loc[0]:loc[0]+self.box_size[0],
-                        loc[1]:loc[1]+self.box_size[1],:].reshape((-1, frames.shape[2]))
+        vals = [frames[loc[0]-self.box_size[0]//2:loc[0]+self.box_size[0]//2,
+                        loc[1]-self.box_size[1]//2:loc[1]+self.box_size[1]//2,:].reshape((-1, frames.shape[2]))
                         for loc in self.pixels]
         vals = np.mean(vals, axis=1, keepdims = True)
 
