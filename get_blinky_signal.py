@@ -9,7 +9,7 @@ import cv2
 import sys
 import numpy as np
 from rgb_streaming import PixelCatcher, mouseParam
-from video import video_stream, frame_grabber
+from readers import video_stream, frame_grabber
 
 import matplotlib.pyplot as plt
 import json
