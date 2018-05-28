@@ -1,0 +1,7 @@
+*.wav
+*.pdf
+*.swp
+*.npz
+*.gz
+*.tar
+*__pycache__
