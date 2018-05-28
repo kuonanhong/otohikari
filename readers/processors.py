@@ -20,7 +20,7 @@ class ProcessorBase(object):
     The derived classes should implement the __process__ method.
     '''
 
-    def __init__(self, monitor=False, qlen=100):
+    def __init__(self, monitor=False, qlen=10):
         self.monitor = monitor
 
         self.deltas = deque([], qlen)  # list of time delta between two batch of frames
@@ -98,10 +98,13 @@ class OnlineStats(ProcessorBase):
         Sample size
     '''
 
-    def __init__(self, shape):
+    def __init__(self, shape, monitor=False):
         '''
         Initialize everything to zero
         '''
+        # call parent method
+        ProcessorBase.__init__(self, monitor=monitor)
+        
         self.shape = shape
         self.mean = np.zeros(shape, dtype=np.float64)
         self.var = np.zeros(shape, dtype=np.float64)
@@ -144,7 +147,11 @@ class PixelCatcher(ProcessorBase):
     pixels: list of tuples
         The location of the pixels to collect in the image
     '''
-    def __init__(self, pixels):
+    def __init__(self, pixels, monitor=False):
+
+        # call parent method
+        ProcessorBase.__init__(self, monitor=monitor)
+        
         self.pixels = pixels
         self.values = []
 
@@ -189,7 +196,7 @@ class BoxCatcher(ProcessorBase):
     def __init__(self, pixels, box_size, agg=None, monitor=False):
 
         # call parent method
-        ProcessorBase.__init__(self, monitor=monitor, qlen=10)
+        ProcessorBase.__init__(self, monitor=monitor)
 
         # set the attributes
         self.pixels = pixels

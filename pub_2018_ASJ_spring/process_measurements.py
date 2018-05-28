@@ -74,7 +74,7 @@ v_readsize = 2 * int(fs_v)
 # use this to find the location of the "best" pixel
 stats = OnlineStats((framesize_v[1], framesize_v[0], n_channels_v))
 video = ffmpeg_open_raw_video(args.video_file, framesize_v, n_channels=n_channels_v, 
-                            bufsize=v_bufsize, readsize=v_readsize, online_func=stats.process, 
+                            bufsize=v_bufsize, readsize=v_readsize, online_func=stats, 
                             start=start, duration=duration)
 video_time = np.arange(video.shape[0]) / fs_v
 
@@ -86,7 +86,7 @@ else:
 
 catcher = PixelCatcher(pixel_locs)
 ffmpeg_open_raw_video(args.video_file, framesize_v, n_channels=n_channels_v, 
-                            bufsize=v_bufsize, readsize=v_readsize, online_func=catcher.process, 
+                            bufsize=v_bufsize, readsize=v_readsize, online_func=catcher, 
                             keep_data=False)
 
 leds = np.sum(catcher.extract(), axis=2)  # sum RGB channels
