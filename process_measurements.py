@@ -6,8 +6,7 @@ from scipy import signal as sig
 from scipy.io import wavfile
 import samplerate
 
-from utilities import ffmpeg_open_raw_video, ffmpeg_open_raw_audio
-from streaming import OnlineStats, PixelCatcher
+from readers import ffmpeg_open_raw_video, ffmpeg_open_raw_audio, OnlineStats, PixelCatcher
 
 parser = argparse.ArgumentParser()
 parser.add_argument('video_file', help='Name of the video recording file')

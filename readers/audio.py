@@ -45,6 +45,9 @@ def audioread(filename, ffmpeg_bin='ffmpeg', debug=False):
             if len(words) >= 1 and words[0] != 'Stream':
                 continue
 
+            if re.search('Audio:', l) is None:
+                continue
+
             fmt = re.search('Audio: (.*?) ', l).group(1)
             samplerate = re.search(', (\d+) Hz,', l).group(1)
             n_channels, sampleformat, n_bits = re.search(', (\d+ channels|mono|stereo), ([a-z]+)([0-9]*)', l).group(1,2,3)
@@ -60,7 +63,7 @@ def audioread(filename, ffmpeg_bin='ffmpeg', debug=False):
 
     samplerate = int(samplerate)
 
-    if sampleformat == 'flt':
+    if sampleformat == 'flt' or sampleformat == 'fltp':
 
         dtype = np.float32
         out_format = 'f32le'

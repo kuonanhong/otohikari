@@ -1,3 +1,9 @@
+'''
+This file contains routines to help dealing with processing
+streaming videos and reading frames and pixel locations
+
+Code written by Daiki Horiike and Robin Scheibler, 2018
+'''
 import cv2 as cv
 from threading import Thread
 import queue
@@ -39,6 +45,8 @@ class ThreadedVideoStream(object):
         else:
             self._end = end
 
+        self.capture = None
+
     def __enter__(self):
 
         # Try to access the device
@@ -63,6 +71,13 @@ class ThreadedVideoStream(object):
     def __exit__(self, exc_type, exc_value, traceback):
 
         self.stop()  # stop, just in case
+
+    def get_fps(self):
+        ''' Return video FPS '''
+        if self.capture is not None:
+            return self.capture.get(5)
+        else:
+            return None
 
     def start(self):
         ''' Start the stream '''
@@ -158,6 +173,7 @@ def video_stream(video, start=0, end=None, callback=None, show=False):
     with ThreadedVideoStream(video, start=start, end=end) as cap:
 
         cap.start()
+        fps = cap.get_fps()
 
         while (cap.is_streaming()):
 
@@ -175,6 +191,8 @@ def video_stream(video, start=0, end=None, callback=None, show=False):
 
     if show:
         cv.destroyAllWindows()
+
+    return fps
 
 
 def frame_grabber(video, frame=0, show=False):
@@ -201,6 +219,48 @@ def frame_grabber(video, frame=0, show=False):
         plt.show()
 
     return grabber.extract()
+
+
+class MouseParam(object):
+    ''' Helper object to get a mouse click coordinates in an image '''
+    def __init__(self, input_img_name):
+        # parameters of the mouse click
+        self.mouse_event = {"x":None, "y":None, "event":None, "flags":None}
+        # setting of the mouse callback
+        cv2.setMouseCallback(input_img_name, self.__callback, None)
+
+    # callback function
+    def __callback(self, event_type, x, y, flags, userdata):
+
+        self.mouse_event["x"] = x
+        self.mouse_event["y"] = y
+        self.mouse_event["event"] = event_type
+        self.mouse_event["flags"] = flags
+
+    def get(self, param_name):
+        return self.mouse_event[param_name]
+
+    def get_pos(self):
+        return (self.mouse_event["x"], self.mouse_event["y"])
+
+
+def pixel_from_click(frame):
+    '''
+    Obtain the location of a pixel clicked with the mouse in a frame
+    '''
+    window_name = "input window"
+    cv2.imshow(window_name, frame)
+
+    mouse_data = MouseParam(window_name)
+
+    while 1:
+        cv2.waitKey(20)
+        if mouse_data.get('event') == cv2.EVENT_LBUTTONDOWN: #left click
+            y,x = mouseData.get_pos()
+            break
+
+    cv2.destroyAllWindows()
+    return x, y
 
 
 if __name__ == '__main__':

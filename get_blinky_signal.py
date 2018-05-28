@@ -8,26 +8,10 @@ as argument.
 import cv2
 import sys
 import numpy as np
-from rgb_streaming import PixelCatcher, mouseParam
-from readers import video_stream, frame_grabber
+from readers import video_stream, frame_grabber, BoxCatcher
 
 import matplotlib.pyplot as plt
 import json
-
-def xy_pixel_definition(frame):
-    window_name = "input window"
-    cv2.imshow(window_name, frame)
-
-    mouseData = mouseParam(window_name)
-
-    while 1:
-        cv2.waitKey(20)
-        if mouseData.getEvent() == cv2.EVENT_LBUTTONDOWN: #left click
-            y,x = mouseData.getPos()
-            break
-
-    cv2.destroyAllWindows()
-    return x, y
 
 if __name__ == '__main__':
 
@@ -49,7 +33,7 @@ if __name__ == '__main__':
 
     for color, param in data.items():
         print(color,'...')
-        img = PixelCatcher([param['loc']],[param['h'], param['w']])
+        img = BoxCatcher([param['loc']],[param['h'], param['w']])
         video_stream(param["video_file"],
                 start=param["start"], end=param["end"],
                 callback=img.process)
