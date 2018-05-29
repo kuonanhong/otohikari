@@ -9,8 +9,8 @@ import argparse, os, json, sys
 import numpy as np
 import scipy.linalg as la
 from scipy.io import wavfile
+from scipy.signal import fftconvolve
 import pyroomacoustics as pra
-import sounddevice as sd
 from mir_eval.separation import bss_eval_images
 
 import matplotlib.pyplot as plt
@@ -22,39 +22,45 @@ import mkl_fft as fft
 
 from max_sinr_beamforming import compute_variances, compute_gain
 
-experiment_folder = '../measurements/20171207'
-file_pattern = os.path.join(experiment_folder, 'segmented/{}_{}_SIR_{}_dB.wav')
-file_speech_ref = os.path.join(experiment_folder, 'segmented/{}_speech_ref.wav')
-protocol_file = os.path.join(experiment_folder, 'protocol.json')
+experiment_folder = '../measurements/20180523/'
+protocol_file = os.path.join(experiment_folder, 'session-201805{session}/protocol.json')
+metadata_file = os.path.join(experiment_folder, 'session-201805{session}/processed/metadata.json')
 
-with open(protocol_file, 'r') as f:
-    protocol = json.load(f)
+blinky_sig = 'blinky_red'  # use the red channel
+fs = 16000
+thresh_opt = { -5 : 0.73, 0 : 0.73, 5 : 0.73, 10 : 0.73, 15 : 0.73, 20 : 0.73 }  # 2018/05/23
 
-#thresh_opt = { 5 : 530, 10 : 460, 15 : 370, 20 : 260, 25 : 220 }  # 2017/11/29
-thresh_opt = { 5 : 650, 10 : 600, 15 : 540, 20 : 425, 25 : 340 }  # 2017/12/07
-
-
-sir_choices = [5, 10, 15, 20, 25]
-mic_choices = {'olympus' : 'camera_audio', 'pyramic' : 'pyramic_audio'}
-mics_geom = {
-        'pyramic' : np.array(protocol['geometry']['microphones']['pyramic']['locations']),
-        'olympus'  : np.array(protocol['geometry']['microphones']['olympus']['locations']),
+target_choices = ['ch' + str(i+1) for i in range(4)]
+sir_choices = [-5, 0, 5, 10, 15, 20]
+mic_choices = {
+        'camera' : 'camera',
+        'pyramic_4' : 'pyramic',
+        'pyramic_24' : 'pyramic',
+        'pyramic_48' : 'pyramic',
         }
+blinky_source_map = dict(zip(target_choices, list(range(len(target_choices)))))
 
-parser = argparse.ArgumentParser()
-parser.add_argument('SIR', nargs='?', type=int, choices=sir_choices, help='The SIR between speech and noise')
-parser.add_argument('mic', nargs='?', type=str, choices=mic_choices.keys(), help='Which input device to use')
-parser.add_argument('--thresh', '-t', type=float, help='The threshold for VAD')
-parser.add_argument('--nfft', type=int, default=1024, help='The FFT size to use for STFT')
-parser.add_argument('--no_norm', action='store_true', help='Disable matching of output to channel 1')
-parser.add_argument('--clip_gain', type=float, help='Clip the maximum gain')
-parser.add_argument('--vad_guard', type=int, help='Value by which to extend VAD boundaries')
-parser.add_argument('--synth_mix', action='store_true', help='Works on artifical mix of signals and compute objective evaluation.')
-parser.add_argument('--save_sample', type=str, help='Save samples of input and output signals, argument is the directory')
-parser.add_argument('--plot', action='store_true', help='Display all the figures')
-parser.add_argument('--all', action='store_true', help='Process all the samples')
+# subsets of pyramic microphones to use for BSS
+pyramic_bss_4ch = [0, 16, 32, 15]
+pyramic_bss_4ch = [8, 31, 24, 15]
+pyramic_bss_4ch = [8, 9, 30, 31]
 
-def process_experiment_max_sinr(SIR, mic, args):
+def fast_corr(signal, template):
+    ''' correlation with fft '''
+    return fftconvolve(signal, template[::-1], mode='same')
+
+def process_experiment_max_sinr(SIR, mic, blinky, args):
+
+    session = args.session
+    target = args.target
+
+    with open(metadata_file.format(session=args.session), 'r') as f:
+        metadata = json.load(f)
+
+    file_pattern = os.path.join(experiment_folder, metadata['filename_pattern'])
+
+    with open(protocol_file.format(session=args.session), 'r') as f:
+        protocol = json.load(f)
 
     nfft = args.nfft
     vad_guard = args.vad_guard
@@ -64,24 +70,39 @@ def process_experiment_max_sinr(SIR, mic, args):
         vad_thresh = args.thresh
 
     # read_in the mix signals
-    fs_led, leds   = wavfile.read(file_pattern.format('camera_leds_zero_hold', 'mix', SIR))
-    fs_snd, audio  = wavfile.read(file_pattern.format(mic_choices[mic], 'mix', SIR))
+    fs_led, leds   = wavfile.read(file_pattern.format(
+        session=session, snr=SIR, mic=blinky, source='mix', fs=fs))
+    fs_snd, audio  = wavfile.read(file_pattern.format(
+        session=session, snr=SIR, mic=mic_choices[mic], source='mix', fs=fs))
     assert fs_led == fs_snd
 
     # read in the ref signals
-    r, noise_ref  = wavfile.read(file_pattern.format(mic_choices[mic], 'noise_ref', SIR))
-    assert r == fs_snd
-    r, speech_ref  = wavfile.read(file_speech_ref.format(mic_choices[mic]))
-    assert r == fs_snd
-    r, leds_ref   = wavfile.read(file_speech_ref.format('camera_leds_zero_hold'))
-    assert r == fs_snd
+    sources_ref  = dict(zip(target_choices,
+        [ wavfile.read(file_pattern.format(
+                session=session, mic=mic_choices[mic], snr=SIR, source=ch, fs=fs))[1]
+            for ch in target_choices ]))
+    leds_ref  = dict(zip(target_choices,
+        [ wavfile.read(file_pattern.format(
+                session=session, mic=blinky, snr=SIR, source=ch, fs=fs))[1]
+            for ch in target_choices ]))
+    speech_ref  = sources_ref[target]
+
+    noise_ref = np.zeros_like(sources_ref[target])
+    n_ch = [ch for ch in target_choices if ch != target]
+    for ch in n_ch:
+        noise_ref += sources_ref[ch]
 
     # In case of objective evaluation, we do an artificial mix
     if args.synth_mix:
-        audio = noise_ref + speech_ref
+        audio = sources_ref[target] + noise_ref
 
     # get the geometry information to get nice plots.
-    mics_loc = np.array(protocol['geometry']['microphones'][mic]['reference'])
+    mics_geom = {
+            'pyramic' : np.array(protocol['geometry']['microphones']['pyramic']['locations']),
+            'camera'  : np.array(protocol['geometry']['microphones']['camera']['locations']),
+            }
+
+    mics_loc = np.array(protocol['geometry']['microphones'][mic_choices[mic]]['reference'])
     noise_loc = protocol['geometry']['speakers']['locations'][0]
     speech_loc = protocol['geometry']['speakers']['locations'][1]
 
@@ -92,11 +113,16 @@ def process_experiment_max_sinr(SIR, mic, args):
     theta_noise = np.arccos(np.inner(p0, p1) / la.norm(p0) / la.norm(p1))
     print('Source separation', theta_noise / np.pi * 180)
 
-    if mic == 'pyramic':
-        I = list(range(8,16)) + list(range(24,32)) + list(range(40,48)) # flat part
-        #I = list(range(24,32)) + list(range(40,48)) # flat part
-        #I = list(range(8,16))
-        #I = list(range(48))
+    if 'pyramic' in mic:
+
+        if mic == 'pyramic_4':
+            I = pyramic_bss_4ch
+        elif mic == 'pyramic_24':
+            I = list(range(8,16)) + list(range(24,32)) + list(range(40,48)) # flat part
+        else:
+            I = list(range(48))
+        I_bss = [I.index(i) for i in pyramic_bss_4ch]
+            
         audio = audio[:,I]
         noise_ref = noise_ref[:,I].copy()
         speech_ref = speech_ref[:,I].copy()
@@ -106,15 +132,26 @@ def process_experiment_max_sinr(SIR, mic, args):
         mics_positions[:,2] -= np.max(mics_positions[:,2])
         mics_positions += mics_loc
 
-    elif mic == 'olympus':
-        mics_positions = mics_geom['olympus'].copy() + mics_loc
+        for ch in sources_ref:
+            sources_ref[ch] = sources_ref[ch][:,I].copy()
+
+    elif mic == 'camera':
+        mics_positions = mics_geom['camera'].copy() + mics_loc
 
 
     n_samples = audio.shape[0]  # shorthand
     n_channels = audio.shape[1]
 
+    # adjust length of led signal if necessary
+    if leds.shape[0] < audio.shape[0]:
+        z_missing = audio.shape[0] - leds.shape[0]
+        leds = np.pad(leds, (0,z_missing), 'constant')
+    elif leds.shape[0] > audio.shape[0]:
+        leds = leds[:audio.shape[0],]
+
     # perform VAD
-    vad_snd = leds > vad_thresh
+    led_target = leds[:,blinky_source_map[target]]
+    vad_snd = led_target > vad_thresh
 
     # Now we want to make sure no speech speech goes in estimation of the noise covariance matrix.
     # For that we will remove frames neighbouring the detected speech
@@ -131,20 +168,22 @@ def process_experiment_max_sinr(SIR, mic, args):
     print('STFT and stuff')
     sys.stdout.flush()
 
-    engine = pra.realtime.STFT(nfft, nfft // 2, pra.hann(nfft), channels=audio.shape[1])
-    def analysis(x):
-        engine.analysis(x)
-        return np.moveaxis(engine.X, 1, 0)
+    a_win = pra.hann(nfft)
+    s_win = pra.realtime.compute_synthesis_window(a_win, nfft // 2)
+
+    engine = pra.realtime.STFT(nfft, nfft // 2,
+            analysis_window=a_win, synthesis_window=s_win,
+            channels=audio.shape[1])
 
     # Now compute the STFT of the microphone input
-    X = analysis(audio)
+    X = engine.analysis(audio)
     X_time = np.arange(1, X.shape[0]+1) * (nfft / 2) / fs_snd
 
-    X_speech = analysis(audio * vad_guarded[:,None])
-    X_noise = analysis(audio * (1 - vad_guarded[:,None]))
+    X_speech = engine.analysis(audio * vad_guarded[:audio.shape[0],None])
+    X_noise = engine.analysis(audio * (1 - vad_guarded[:audio.shape[0],None]))
 
-    S_ref = analysis(speech_ref)
-    N_ref = analysis(noise_ref)
+    S_ref = engine.analysis(speech_ref)
+    N_ref = engine.analysis(noise_ref)
 
     ##########################
     ## MAX SINR BEAMFORMING ##
@@ -190,6 +229,7 @@ def process_experiment_max_sinr(SIR, mic, args):
 
     # Signal alignment step
     ref = np.vstack([speech_ref[:,0], noise_ref[:,0]])
+
     # Not sure why the delay is sometimes negative here... Need to check more
     delay = np.abs(int(pra.tdoa(out, speech_ref[:,0].astype(np.float), phat=True)))
     if delay > 0:
@@ -204,8 +244,50 @@ def process_experiment_max_sinr(SIR, mic, args):
     metric = bss_eval_images(ref[:,:,None], sig_eval[:,:,None])
 
     # we are only interested in SDR and SIR for the speech source
-    SDR_out = metric[0][0]
-    SIR_out = metric[2][0]
+    ret = { 'Max-SINR' : {'SDR' : metric[0][0], 'SIR' : metric} }
+
+    #############################
+    ## BLIND SOURCE SEPARATION ##
+    #############################
+
+    if mic in ['camera', 'pyramic_4']:
+
+        if 'pyramic' in mic:
+            X_bss = X[:,:,I_bss]
+            ref = np.vstack(
+                    [speech_ref[:,I_bss[0]]] + [sources_ref[ch][:,I_bss[0]]
+                        for ch in target_choices if ch != target])
+        elif mic == 'camera':
+            X_bss = X
+
+        Y = pra.bss.auxiva(X_bss, n_iter=40)
+        bss = pra.realtime.synthesis(Y, nfft, nfft // 2, win=s_win)
+
+        match = []
+        for col in range(bss.shape[1]):
+            xcorr = fast_corr(bss[:,col], ref[0])
+            match.append(np.max(xcorr))
+        best_col = np.argmax(match)
+
+        # Not sure why the delay is sometimes negative here... Need to check more
+        delay = np.abs(int(pra.tdoa(bss[:,best_col], speech_ref[:,0].astype(np.float), phat=True)))
+        print(delay)
+        if delay > 0:
+            bss_trunc = bss[delay:delay+ref.shape[1],]
+        elif delay < 0:
+            bss_trunc = np.concatenate((np.zeros((-delay, bss.shape[1])), bss[:ref.shape[1]+delay]))
+        else:
+            bss_trunc = bss[:ref.shape[1],]
+
+        if ref.shape[1] > bss_trunc.shape[0]:
+            ref_lim = bss_trunc.shape[0]
+        else:
+            ref_lim = ref.shape[1]
+
+        metric = bss_eval_images(ref[:,:ref_lim,None], bss_trunc.T[:,:,None])
+        SDR_bss = metric[0][0]
+        SIR_bss = metric[2][0]
+        ret['BSS'] = { 'SDR' : metric[0][0], 'SIR' : metric[2][0] }
 
     ##################
     ## SAVE SAMPLES ##
@@ -213,16 +295,24 @@ def process_experiment_max_sinr(SIR, mic, args):
 
     if args.save_sample is not None:
 
+        if not os.path.exists(args.save_sample):
+            os.makedirs(args.save_sample)
+
         # for informal listening tests, we need to high pass and normalize the
         # amplitude.
-        upper = np.maximum(audio[:,0].max(), out.max())
+        upper = np.max([audio[:,0].max(), out.max(), bss.max()])
         sig_in = pra.highpass(audio[:,0].astype(np.float) / upper, fs_snd, fc=150)
         sig_out = pra.highpass(out / upper, fs_snd, fc=150)
 
         f1 = os.path.join(args.save_sample, '{}_ch0_SIR_{}_dB.wav'.format(mic, SIR))
         wavfile.write(f1, fs_snd, sig_in)
-        f2 = os.path.join(args.save_sample, '{}_out_SIR_{}_dB.wav'.format(mic, SIR))
+        f2 = os.path.join(args.save_sample, '{}_maxsinr_SIR_{}_dB.wav'.format(mic, SIR))
         wavfile.write(f2, fs_snd, sig_out)
+
+        if mic in ['camera', 'pyramic_4']:
+            sig_bss = pra.highpass(bss[:,best_col] / upper, fs_snd, fc=150)
+            f3 = os.path.join(args.save_sample, '{}_bss_SIR_{}_dB.wav'.format(mic, SIR))
+            wavfile.write(f3, fs_snd, sig_bss)
 
 
     ##########
@@ -237,20 +327,20 @@ def process_experiment_max_sinr(SIR, mic, args):
         plt.legend(['output', 'reference'])
 
         # time axis for plotting
-        led_time = np.arange(leds.shape[0]) / fs_led + 1 / (2 * fs_led)
+        led_time = np.arange(led_target.shape[0]) / fs_led + 1 / (2 * fs_led)
         audio_time = np.arange(n_samples) / fs_snd
 
         plt.figure()
-        plt.plot(led_time, leds, 'r')
+        plt.plot(led_time, led_target, 'r')
         plt.title('LED signal')
 
         # match the scales of VAD and light to sound before plotting
         q_vad = np.max(audio)
-        q_led = np.max(audio) / np.max(leds)
+        q_led = np.max(audio) / np.max(led_target)
 
         plt.figure()
         plt.plot(audio_time, audio[:,0], 'b') 
-        plt.plot(led_time, leds * q_led, 'r')
+        plt.plot(led_time, led_target * q_led, 'r')
         plt.plot(audio_time, vad_snd * q_vad, 'g')
         plt.plot(audio_time, vad_guarded * q_vad, 'g--')
         plt.legend(['audio','VAD'])
@@ -263,6 +353,7 @@ def process_experiment_max_sinr(SIR, mic, args):
         #plt.plot(a_time, speech_ref[:,0])
         plt.legend(['channel 0', 'beamformer output', 'speech reference'])
 
+        '''
         plt.figure()
         mic_array.plot_beam_response()
         plt.vlines([180+np.degrees(theta_speech), 180-np.degrees(theta_noise)], 0, nfft // 2)
@@ -275,6 +366,7 @@ def process_experiment_max_sinr(SIR, mic, args):
 
         room.add_microphone_array(mic_array)
         room.plot(img_order=1, freq=[800, 1000, 1200, 1400, 1600, 2500, 4000])
+        '''
 
         plt.figure()
         mic_array.plot()
@@ -283,27 +375,51 @@ def process_experiment_max_sinr(SIR, mic, args):
 
 
     # Return SDR and SIR
-    return SDR_out, SIR_out
+    return ret
 
 
 if __name__ == '__main__':
 
+    parser = argparse.ArgumentParser()
+    parser.add_argument('SIR', nargs='?', type=int, choices=sir_choices, help='The SIR between speech and noise')
+    parser.add_argument('mic', nargs='?', type=str, choices=mic_choices.keys(), help='Which input device to use')
+    parser.add_argument('target', type=str, choices=target_choices, help='The target audio source')
+    parser.add_argument('--session', choices=['23','24'], default='24', type=str, help='The recording session to use')
+    parser.add_argument('-o', '--output_dir', type=str, help='The output directory')
+    parser.add_argument('--thresh', '-t', type=float, help='The threshold for VAD')
+    parser.add_argument('--nfft', type=int, default=1024, help='The FFT size to use for STFT')
+    parser.add_argument('--no_norm', action='store_true', help='Disable matching of output to channel 1')
+    parser.add_argument('--clip_gain', type=float, help='Clip the maximum gain')
+    parser.add_argument('--vad_guard', type=int, help='Value by which to extend VAD boundaries')
+    parser.add_argument('--synth_mix', action='store_true', help='Works on artifical mix of signals and compute objective evaluation.')
+    parser.add_argument('--save_sample', type=str, help='Save samples of input and output signals, argument is the directory')
+    parser.add_argument('--plot', action='store_true', help='Display all the figures')
+    parser.add_argument('--all', action='store_true', help='Process all the samples')
     args = parser.parse_args()
 
     if args.all:
-        results = dict()
+        # store the results to save in JSON and later load in
+        # pandas.DataFrame
+        results = dict(
+                columns=['Microphones', 'Algorithm', 'SIR_in', 'SDR', 'SIR'],
+                data=[]
+                )
         for mic in mic_choices.keys():
-            results[mic] = {'SIR_in':[], 'SIR_out':[], 'SDR_out':[]}
             for SIR in sir_choices:
-                results[mic]['SIR_in'].append(SIR)
-                sdr_o, sir_o = process_experiment_max_sinr(SIR, mic, args)
-                results[mic]['SIR_out'].append(sir_o)
-                results[mic]['SDR_out'].append(sdr_o)
+                print('Running for mic={} SIR={} ...'.format(mic, SIR), end='')
+                ret = process_experiment_max_sinr(SIR, mic, blinky_sig, args)
+                for algo, metrics in ret.items():
+                    results['data'].append([mic, algo, SIR, metrics['SDR'], metrics['SIR']])
+                print('done.')
+
+        if not os.path.exists(args.output_dir):
+            os.makedirs(args.output_dir)
 
         import datetime
         now = datetime.datetime.now()
         date_str = datetime.datetime.strftime(now, '%Y%m%d-%H%M%S')
-        filename = 'figures/{}_results_experiment_sir.json'.format(date_str)
+        fn = '{}_results_experiment_sir.json'.format(date_str)
+        filename = os.path.join(args.output_dir, fn)
 
         parameters = dict(
                 nfft=args.nfft,
@@ -315,6 +431,7 @@ if __name__ == '__main__':
                 )
 
         record = dict(
+                date=date_str,
                 parameters=parameters,
                 results=results,
                 )
@@ -329,7 +446,7 @@ if __name__ == '__main__':
         except:
             raise ValueError('When the keyword --all is not used, SIR and mic are required arguments')
 
-        SDR_out, SIR_out = process_experiment_max_sinr(SIR, mic, args)
+        SDR_out, SIR_out = process_experiment_max_sinr(SIR, mic, blinky_sig, args)
 
         print('SDR={} SIR={}'.format(SDR_out, SIR_out))
 

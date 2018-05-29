@@ -18,9 +18,9 @@ def fractional_repeat(x, r, out_len=None):
         out_len = int(r * x.shape[0])
 
     if x.ndim == 1:
-        y = numpy.empty(out_len, dtype=x.dtype)
+        y = numpy.zeros(out_len, dtype=x.dtype)
     else:
-        y = numpy.empty((out_len,) + x.shape[1:], dtype=x.dtype)
+        y = numpy.zeros((out_len,) + x.shape[1:], dtype=x.dtype)
 
     length = 0
     i = 0
