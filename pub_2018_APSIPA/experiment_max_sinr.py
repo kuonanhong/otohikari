@@ -12,6 +12,7 @@ from scipy.io import wavfile
 from scipy.signal import fftconvolve
 import pyroomacoustics as pra
 from mir_eval.separation import bss_eval_images
+from tools import get_git_hash
 
 import matplotlib.pyplot as plt
 #import seaborn as sns
@@ -193,6 +194,7 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
     sys.stdout.flush()
 
     # covariance matrices from noisy signal
+    Rall = np.einsum('i...j,i...k->...jk', X, np.conj(X))
     Rs = np.einsum('i...j,i...k->...jk', X_speech, np.conj(X_speech))
     Rn = np.einsum('i...j,i...k->...jk', X_noise, np.conj(X_noise)) 
 
@@ -201,7 +203,7 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
     #Rn = np.einsum('i...j,i...k->...jk', N_ref, np.conj(N_ref))
 
     # compute the MaxSINR beamformer
-    w = [la.eigh(rs, b=rn, eigvals=(n_channels-1,n_channels-1))[1] for rs,rn in zip(Rs[1:], Rn[1:])]
+    w = [la.eigh(rs, b=rn, eigvals=(n_channels-1,n_channels-1))[1] for rs,rn in zip(Rall[1:], Rn[1:])]
     w = np.squeeze(np.array(w))
     nw = la.norm(w, axis=1)
     w[nw > 1e-10,:] /= nw[nw > 1e-10,None]
@@ -244,7 +246,7 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
     metric = bss_eval_images(ref[:,:,None], sig_eval[:,:,None])
 
     # we are only interested in SDR and SIR for the speech source
-    ret = { 'Max-SINR' : {'SDR' : metric[0][0], 'SIR' : metric} }
+    ret = { 'Max-SINR' : {'SDR' : metric[0][0], 'SIR' : metric[2][0]} }
 
     #############################
     ## BLIND SOURCE SEPARATION ##
@@ -271,7 +273,6 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
 
         # Not sure why the delay is sometimes negative here... Need to check more
         delay = np.abs(int(pra.tdoa(bss[:,best_col], speech_ref[:,0].astype(np.float), phat=True)))
-        print(delay)
         if delay > 0:
             bss_trunc = bss[delay:delay+ref.shape[1],]
         elif delay < 0:
@@ -300,7 +301,10 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
 
         # for informal listening tests, we need to high pass and normalize the
         # amplitude.
-        upper = np.max([audio[:,0].max(), out.max(), bss.max()])
+        if mic in ['camera', 'pyramic_4']:
+            upper = np.max([audio[:,0].max(), out.max(), bss.max()])
+        else:
+            upper = np.max([audio[:,0].max(), out.max()])
         sig_in = pra.highpass(audio[:,0].astype(np.float) / upper, fs_snd, fc=150)
         sig_out = pra.highpass(out / upper, fs_snd, fc=150)
 
@@ -411,6 +415,8 @@ if __name__ == '__main__':
                 for algo, metrics in ret.items():
                     results['data'].append([mic, algo, SIR, metrics['SDR'], metrics['SIR']])
                 print('done.')
+                for algo, metrics in ret.items():
+                    print('{} SDR={:.2f} SIR={:.2f}'.format(algo, metrics['SDR'], metrics['SIR']))
 
         if not os.path.exists(args.output_dir):
             os.makedirs(args.output_dir)
@@ -421,7 +427,10 @@ if __name__ == '__main__':
         fn = '{}_results_experiment_sir.json'.format(date_str)
         filename = os.path.join(args.output_dir, fn)
 
+        git_commit = get_git_hash()
+
         parameters = dict(
+                git_commit=git_commit,
                 nfft=args.nfft,
                 vad_guard=args.vad_guard,
                 clip_gain=args.clip_gain,
@@ -437,7 +446,7 @@ if __name__ == '__main__':
                 )
 
         with open(filename, 'w') as f:
-            json.dump(record, f)
+            json.dump(record, f, indent=2)
 
     else:
         try:
@@ -446,8 +455,9 @@ if __name__ == '__main__':
         except:
             raise ValueError('When the keyword --all is not used, SIR and mic are required arguments')
 
-        SDR_out, SIR_out = process_experiment_max_sinr(SIR, mic, blinky_sig, args)
+        ret = process_experiment_max_sinr(SIR, mic, blinky_sig, args)
 
-        print('SDR={} SIR={}'.format(SDR_out, SIR_out))
+        for algo, metrics in ret.items():
+            print('{} SDR={:.2f} SIR={:.2f}'.format(algo, metrics['SDR'], metrics['SIR']))
 
 
