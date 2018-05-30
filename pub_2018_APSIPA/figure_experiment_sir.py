@@ -24,7 +24,7 @@ mics = ['pyramic_48', 'pyramic_24', 'pyramic_4', 'camera']
 sns.set(style='whitegrid', context='paper', font_scale=0.9,
         rc={
             'axes.facecolor': (0, 0, 0, 0),
-            'figure.figsize':(3.38649, 3.338649 * len(metrics)),
+            #'figure.figsize':(3.38649, 3.338649 / 4 * len(metrics)),
             'lines.linewidth':1.,
             'text.usetex': False,
             })
@@ -57,7 +57,10 @@ sns.factorplot(
         kind='bar',
         sharey=True,
         hue_order=hue_order,
+        #size=1,
+        aspect=0.66,
         )
+plt.ylim([-5, 37.5])
 
 sns.despine(left=True, bottom=True, offset=5)
 

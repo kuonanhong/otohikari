@@ -42,9 +42,9 @@ mic_choices = {
 blinky_source_map = dict(zip(target_choices, list(range(len(target_choices)))))
 
 # subsets of pyramic microphones to use for BSS
-pyramic_bss_4ch = [0, 16, 32, 15]
-pyramic_bss_4ch = [8, 31, 24, 15]
-pyramic_bss_4ch = [8, 9, 30, 31]
+pyramic_bss_4ch = [8, 9, 30, 31]  # works well for BSS, -5 dB
+pyramic_bss_4ch = [10, 11, 28, 29]  # maxsinr better, more balanced
+
 
 def fast_corr(signal, template):
     ''' correlation with fft '''
@@ -86,7 +86,10 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
         [ wavfile.read(file_pattern.format(
                 session=session, mic=blinky, snr=SIR, source=ch, fs=fs))[1]
             for ch in target_choices ]))
-    speech_ref  = sources_ref[target]
+
+    # reorder with target in first position
+    ref = np.array([sources_ref[target]] + [sources_ref[ch]
+                for ch in target_choices if ch != target])
 
     noise_ref = np.zeros_like(sources_ref[target])
     n_ch = [ch for ch in target_choices if ch != target]
@@ -120,21 +123,20 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
             I = pyramic_bss_4ch
         elif mic == 'pyramic_24':
             I = list(range(8,16)) + list(range(24,32)) + list(range(40,48)) # flat part
-        else:
+        elif mic == 'pyramic_48':
             I = list(range(48))
-        I_bss = [I.index(i) for i in pyramic_bss_4ch]
-            
+        else:
+            raise ValueError('Unsupported configuration')
+
         audio = audio[:,I]
         noise_ref = noise_ref[:,I].copy()
-        speech_ref = speech_ref[:,I].copy()
+        ref = ref[:,:,I].copy()
+
         mics_positions = mics_geom['pyramic'][I].copy()
         # place in room 2-806
         mics_positions -= np.mean(mics_positions, axis=0)[None,:]
         mics_positions[:,2] -= np.max(mics_positions[:,2])
         mics_positions += mics_loc
-
-        for ch in sources_ref:
-            sources_ref[ch] = sources_ref[ch][:,I].copy()
 
     elif mic == 'camera':
         mics_positions = mics_geom['camera'].copy() + mics_loc
@@ -183,9 +185,6 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
     X_speech = engine.analysis(audio * vad_guarded[:audio.shape[0],None])
     X_noise = engine.analysis(audio * (1 - vad_guarded[:audio.shape[0],None]))
 
-    S_ref = engine.analysis(speech_ref)
-    N_ref = engine.analysis(noise_ref)
-
     ##########################
     ## MAX SINR BEAMFORMING ##
     ##########################
@@ -194,20 +193,16 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
     sys.stdout.flush()
 
     # covariance matrices from noisy signal
-    Rall = np.einsum('i...j,i...k->...jk', X, np.conj(X))
     Rs = np.einsum('i...j,i...k->...jk', X_speech, np.conj(X_speech))
     Rn = np.einsum('i...j,i...k->...jk', X_noise, np.conj(X_noise)) 
-
-    # compute covariances with reference signals to check everything is working correctly
-    #Rs = np.einsum('i...j,i...k->...jk', S_ref, np.conj(S_ref))
-    #Rn = np.einsum('i...j,i...k->...jk', N_ref, np.conj(N_ref))
+    Rall = Rs + Rn
 
     # compute the MaxSINR beamformer
     w = [la.eigh(rs, b=rn, eigvals=(n_channels-1,n_channels-1))[1] for rs,rn in zip(Rall[1:], Rn[1:])]
     w = np.squeeze(np.array(w))
     nw = la.norm(w, axis=1)
     w[nw > 1e-10,:] /= nw[nw > 1e-10,None]
-    w = np.concatenate([np.ones((1,n_channels)), w], axis=0)
+    w = np.concatenate([np.ones((1,n_channels)), w], axis=0)  # add dummy beamformer at DC
 
     if not args.no_norm:
         # normalize with respect to input signal
@@ -230,23 +225,23 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
     out = mic_array.process()
 
     # Signal alignment step
-    ref = np.vstack([speech_ref[:,0], noise_ref[:,0]])
 
     # Not sure why the delay is sometimes negative here... Need to check more
-    delay = np.abs(int(pra.tdoa(out, speech_ref[:,0].astype(np.float), phat=True)))
+    delay = int(pra.tdoa(out, ref[0,:,0].astype(np.float), phat=True))
+    print(delay)
+    delay = np.abs(delay)
     if delay > 0:
         out_trunc = out[delay:delay+ref.shape[1]]
-        noise_eval = audio[:ref.shape[1],0] - out_trunc
     else:
         out_trunc = np.concatenate((np.zeros(-delay), out[:ref.shape[1]+delay]))
-        noise_eval = audio[:ref.shape[1],0] - out_trunc
-    sig_eval = np.vstack([out_trunc, noise_eval])
+    sig_eval = np.vstack([out_trunc] * len(target_choices))
 
     # We use the BSS eval toolbox
-    metric = bss_eval_images(ref[:,:,None], sig_eval[:,:,None])
+    metric = bss_eval_images(ref[:,:,0], sig_eval[:,:,None])
 
     # we are only interested in SDR and SIR for the speech source
     ret = { 'Max-SINR' : {'SDR' : metric[0][0], 'SIR' : metric[2][0]} }
+
 
     #############################
     ## BLIND SOURCE SEPARATION ##
@@ -254,25 +249,17 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
 
     if mic in ['camera', 'pyramic_4']:
 
-        if 'pyramic' in mic:
-            X_bss = X[:,:,I_bss]
-            ref = np.vstack(
-                    [speech_ref[:,I_bss[0]]] + [sources_ref[ch][:,I_bss[0]]
-                        for ch in target_choices if ch != target])
-        elif mic == 'camera':
-            X_bss = X
-
-        Y = pra.bss.auxiva(X_bss, n_iter=40)
+        Y = pra.bss.auxiva(X, n_iter=40)
         bss = pra.realtime.synthesis(Y, nfft, nfft // 2, win=s_win)
 
         match = []
         for col in range(bss.shape[1]):
-            xcorr = fast_corr(bss[:,col], ref[0])
+            xcorr = fast_corr(bss[:,col], ref[0,:,0])
             match.append(np.max(xcorr))
         best_col = np.argmax(match)
 
         # Not sure why the delay is sometimes negative here... Need to check more
-        delay = np.abs(int(pra.tdoa(bss[:,best_col], speech_ref[:,0].astype(np.float), phat=True)))
+        delay = np.abs(int(pra.tdoa(bss[:,best_col], ref[0,:,0].astype(np.float), phat=True)))
         if delay > 0:
             bss_trunc = bss[delay:delay+ref.shape[1],]
         elif delay < 0:
@@ -285,7 +272,10 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
         else:
             ref_lim = ref.shape[1]
 
-        metric = bss_eval_images(ref[:,:ref_lim,None], bss_trunc.T[:,:,None])
+        if mic == 'camera':
+            bss_trunc = np.hstack([bss_trunc] * 2)
+
+        metric = bss_eval_images(ref[:,:ref_lim,0,None], bss_trunc.T[:,:,None])
         SDR_bss = metric[0][0]
         SIR_bss = metric[2][0]
         ret['BSS'] = { 'SDR' : metric[0][0], 'SIR' : metric[2][0] }
@@ -327,7 +317,7 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
 
         plt.figure()
         plt.plot(out_trunc)
-        plt.plot(speech_ref[:,0])
+        plt.plot(ref[0,:,0])
         plt.legend(['output', 'reference'])
 
         # time axis for plotting
@@ -354,7 +344,6 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
         a_time = np.arange(audio.shape[0]) / fs_snd
         plt.plot(a_time, audio[:,0])
         plt.plot(a_time, out_trunc)
-        #plt.plot(a_time, speech_ref[:,0])
         plt.legend(['channel 0', 'beamformer output', 'speech reference'])
 
         '''
