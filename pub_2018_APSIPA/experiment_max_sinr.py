@@ -430,7 +430,6 @@ if __name__ == '__main__':
         git_commit = get_git_hash()
 
         parameters = dict(
-                git_commit=git_commit,
                 nfft=args.nfft,
                 vad_guard=args.vad_guard,
                 clip_gain=args.clip_gain,
@@ -441,6 +440,7 @@ if __name__ == '__main__':
 
         record = dict(
                 date=date_str,
+                git_commit=git_commit,
                 parameters=parameters,
                 results=results,
                 )
