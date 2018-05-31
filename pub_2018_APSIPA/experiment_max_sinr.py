@@ -280,6 +280,31 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
         SIR_bss = metric[2][0]
         ret['BSS'] = { 'SDR' : metric[0][0], 'SIR' : metric[2][0] }
 
+    #################################
+    ## Estimate SDR and SIR of mix ##
+    #################################
+
+    # Not sure why the delay is sometimes negative here... Need to check more
+    delay = np.abs(int(pra.tdoa(audio[:,0], ref[0,:,0].astype(np.float), phat=True)))
+    if delay > 0:
+        audio_trunc = audio[delay:delay+ref.shape[1],0]
+    elif delay < 0:
+        audio_trunc = np.concatenate((np.zeros(-delay), audio[:ref.shape[1]+delay,0]))
+    else:
+        audio_trunc = audio[:ref.shape[1],0]
+
+    if ref.shape[1] > audio_trunc.shape[0]:
+        ref_lim = audio_trunc.shape[0]
+    else:
+        ref_lim = ref.shape[1]
+
+    audio_trunc = np.vstack([audio_trunc] * len(ref))
+
+    metric = bss_eval_images(ref[:,:ref_lim,0,None], audio_trunc[:,:,None])
+    SDR_bss = metric[0][0]
+    SIR_bss = metric[2][0]
+    ret['Mix'] = { 'SDR' : metric[0][0], 'SIR' : metric[2][0] }
+
     ##################
     ## SAVE SAMPLES ##
     ##################
@@ -391,12 +416,17 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     if args.all:
+
+        # Check 
+        git_commit = get_git_hash()
+
         # store the results to save in JSON and later load in
         # pandas.DataFrame
         results = dict(
                 columns=['Microphones', 'Algorithm', 'SIR_in', 'SDR', 'SIR'],
                 data=[]
                 )
+
         for mic in mic_choices.keys():
             for SIR in sir_choices:
                 print('Running for mic={} SIR={} ...'.format(mic, SIR), end='')
@@ -415,8 +445,6 @@ if __name__ == '__main__':
         date_str = datetime.datetime.strftime(now, '%Y%m%d-%H%M%S')
         fn = '{}_results_experiment_sir.json'.format(date_str)
         filename = os.path.join(args.output_dir, fn)
-
-        git_commit = get_git_hash()
 
         parameters = dict(
                 nfft=args.nfft,

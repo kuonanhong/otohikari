@@ -21,7 +21,7 @@ metrics = ['SDR', 'SIR']
 mics = ['pyramic_48', 'pyramic_24', 'pyramic_4', 'camera']
 
 
-sns.set(style='whitegrid', context='paper', font_scale=0.9,
+sns.set(style='whitegrid', context='paper', #font_scale=0.9,
         rc={
             'axes.facecolor': (0, 0, 0, 0),
             #'figure.figsize':(3.38649, 3.338649 / 4 * len(metrics)),
@@ -48,7 +48,7 @@ df2 = df.melt(
 
 hue_order = sorted(df['Algorithms'].unique(), key=natural_keys)
 
-sns.factorplot(
+g = sns.factorplot(
         data=df2,
         x='Input SIR',
         y='[dB]',
@@ -59,8 +59,13 @@ sns.factorplot(
         hue_order=hue_order,
         #size=1,
         aspect=0.66,
+        legend_out=False,
+        legend=False,
         )
 plt.ylim([-5, 37.5])
+g.set_titles("{col_name}")
+ax = g.axes.flat[0]
+leg = ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.7, edgecolor='w')
 
 sns.despine(left=True, bottom=True, offset=5)
 
