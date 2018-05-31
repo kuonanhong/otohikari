@@ -35,6 +35,7 @@ target_choices = ['ch' + str(i+1) for i in range(4)]
 sir_choices = [-5, 0, 5, 10, 15, 20]
 mic_choices = {
         'camera' : 'camera',
+        'pyramic_2' : 'pyramic',
         'pyramic_4' : 'pyramic',
         'pyramic_24' : 'pyramic',
         'pyramic_48' : 'pyramic',
@@ -44,6 +45,7 @@ blinky_source_map = dict(zip(target_choices, list(range(len(target_choices)))))
 # subsets of pyramic microphones to use for BSS
 pyramic_bss_4ch = [8, 9, 30, 31]  # works well for BSS, -5 dB
 pyramic_bss_4ch = [10, 11, 28, 29]  # maxsinr better, more balanced
+pyramic_bss_2ch = [8, 31]
 
 
 def fast_corr(signal, template):
@@ -119,7 +121,9 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
 
     if 'pyramic' in mic:
 
-        if mic == 'pyramic_4':
+        if mic == 'pyramic_2':
+            I = pyramic_bss_2ch
+        elif mic == 'pyramic_4':
             I = pyramic_bss_4ch
         elif mic == 'pyramic_24':
             I = list(range(8,16)) + list(range(24,32)) + list(range(40,48)) # flat part
@@ -247,7 +251,7 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
     ## BLIND SOURCE SEPARATION ##
     #############################
 
-    if mic in ['camera', 'pyramic_4']:
+    if mic in ['camera', 'pyramic_2', 'pyramic_4']:
 
         Y = pra.bss.auxiva(X, n_iter=40)
         bss = pra.realtime.synthesis(Y, nfft, nfft // 2, win=s_win)
@@ -272,7 +276,7 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
         else:
             ref_lim = ref.shape[1]
 
-        if mic == 'camera':
+        if mic in ['camera', 'pyramic_2']:
             bss_trunc = np.hstack([bss_trunc] * 2)
 
         metric = bss_eval_images(ref[:,:ref_lim,0,None], bss_trunc.T[:,:,None])
@@ -316,7 +320,7 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
 
         # for informal listening tests, we need to high pass and normalize the
         # amplitude.
-        if mic in ['camera', 'pyramic_4']:
+        if mic in ['camera', 'pyramic_2', 'pyramic_4']:
             upper = np.max([audio[:,0].max(), out.max(), bss.max()])
         else:
             upper = np.max([audio[:,0].max(), out.max()])
@@ -328,7 +332,7 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
         f2 = os.path.join(args.save_sample, '{}_maxsinr_SIR_{}_dB.wav'.format(mic, SIR))
         wavfile.write(f2, fs_snd, sig_out)
 
-        if mic in ['camera', 'pyramic_4']:
+        if mic in ['camera', 'pyramic_2', 'pyramic_4']:
             sig_bss = pra.highpass(bss[:,best_col] / upper, fs_snd, fc=150)
             f3 = os.path.join(args.save_sample, '{}_bss_SIR_{}_dB.wav'.format(mic, SIR))
             wavfile.write(f3, fs_snd, sig_bss)
@@ -417,7 +421,7 @@ if __name__ == '__main__':
 
     if args.all:
 
-        # Check 
+        # Check the repo is clean and get the hash
         git_commit = get_git_hash()
 
         # store the results to save in JSON and later load in
