@@ -3,6 +3,7 @@ import numpy as np
 from scipy.optimize import least_squares
 
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 def min_max_normalization(x):
     x_min = x.min()
@@ -96,15 +97,30 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Extract the LED intensity from the video.')
     parser.add_argument('parameter_file', metavar='FILE', help='The file that contains segmentation information')
     parser.add_argument('-s', '--save', type=str, help='Save the values to a file')
-    parser.add_argument('-d', '--deg', default=2, type=int, help='Degree of the polynomial')
     parser.add_argument('-p', '--plot', action='store_true', help='Plot the calibration curves')
     parser.add_argument('-i', '--inspect', type=float, help='Displays a single frame from the video, then exits')
+    parser.add_argument('-c', '--color', choices=['red', 'green', 'blue', 'white'],
+            help='LED color to process')
+    parser.add_argument('--pwm', type=int,
+            help='The number of bits of the PWM range')
     args = parser.parse_args()
 
     with open(args.parameter_file, 'r') as f:
         calib = json.load(f)
 
+    # Plot setting
+    sns.set(style='white', context='paper', font_scale=1.,
+            rc={
+                'axes.facecolor': (0, 0, 0, 0),
+                'figure.figsize':(3.38649 * (3.7 / 8), (3 / 8) * 3.338649),
+                'lines.linewidth':1.,
+                'text.usetex': False,
+                })
+    
     for color, param in calib.items():
+
+        if args.color is not None and color != args.color:
+            continue
 
         data = np.array(param['data'])
         data = data[:,0,:]
@@ -130,13 +146,28 @@ if __name__ == '__main__':
         else:
             col = color
 
-        plt.plot(x, param['fit'], label=color, c=col)
-        plt.plot(x, y, label=color, c=col)
+        label = color.capitalize() + ' channel'
+
+        plt.plot(x, y, c=col)
+        plt.plot(x, param['fit'], '--', c=col)
+        plt.ylabel('Norm. Intensity')
+
+        plt.xlim([0,1])
+        plt.ylim([0,1])
+
+        if args.pwm is not None:
+            plt.xlabel('PWM Duty Cycle')
+            plt.xticks([0, 1], ['$0$', '$2^{' + str(args.pwm) + '}-1$'])
+        else:
+            plt.xlabel('Normalized Audio Power')
+            plt.xticks([0,1])
 
         print(color, param['coef'])
 
     plt.xlim(0, 1)
+    sns.despine(left=True, bottom=True, offset=5)
     plt.legend()
+    plt.tight_layout(pad=0.1)
     plt.show()
 
 

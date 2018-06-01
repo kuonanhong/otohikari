@@ -38,7 +38,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Compute and fit the empirical CDF of speech')
     parser.add_argument('--save', '-s', type=str,
             help='A folder where to save the figure')
-    parser.add_argument('--fit', '-f', action='store_true',
+    parser.add_argument('--plot_fit', '-f', action='store_true',
             help='Also plot the fitted line on top of the CDF')
     parser.add_argument('--no_lut', action='store_false',
             help='Do not save the LUT for the fitted curve')
@@ -73,21 +73,34 @@ if __name__ == '__main__':
     noise = np.array(noise) / max_chunks
 
     thresh = -60
+
+    # Plot setting
+    sns.set(style='white', context='paper', font_scale=1.,
+            rc={
+                'axes.facecolor': (0, 0, 0, 0),
+                'figure.figsize':(3.38649, (3 / 8) * 3.338649),
+                'lines.linewidth':1.,
+                'text.usetex': False,
+                })
     
     y, x, _ = plt.hist(chunks_db[chunks_db > thresh], bins=10000, density=True, cumulative=True, label='Empirical CDF')
     x = (x[:-1] + x[1:]) / 2
 
+    # Fit the cdf with a polynomial
     dim = 10
     c = np.polyfit(x, y, dim)
-
     A = x[:,None] ** np.arange(0, dim+1)
     y_fit = np.dot(A, c[::-1])
 
-    plt.plot(x, y_fit, 'r')
+    if args.plot_fit:
+        plt.plot(x, y_fit, 'r', label='Fitted Curve')
 
     # Fancy plot
     plt.xlabel('Average Frame Power [dB]')
-    plt.title('Empirical CDF of Speech Power')
+    plt.ylabel('Empirical CDF')
+    sns.despine(left=True, bottom=True, offset=5)
+
+    plt.tight_layout(pad=0.1)
 
     if args.save is not None:
         plot_fn = os.path.join(args.save, 'speech_cdf.pdf')
