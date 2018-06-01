@@ -33,10 +33,10 @@ if __name__ == '__main__':
 
     for color, param in data.items():
         print(color,'...')
-        img = BoxCatcher([param['loc']],[param['h'], param['w']])
+        img = BoxCatcher([param['loc']],[param['h'], param['w']], monitor=True)
         video_stream(param["video_file"],
                 start=param["start"], end=param["end"],
-                callback=img.process)
+                callback=img)
         data[color]['data'] = img.extract().tolist()
 
     if args.save is not None:
