@@ -1,8 +1,9 @@
-import json
+import json, os
 import pyroomacoustics as pra
 import numpy as np
 from scipy.optimize import least_squares
 import matplotlib.pyplot as plt
+import seaborn as sns
 
 def norm_pdf(p, x):
     return np.exp( -((x - p[0]) / p[1]) ** 2 ) / (np.sqrt(2. * np.pi) * p[1])
@@ -33,6 +34,18 @@ def const_poly_fit(x, y, dim):
 
 if __name__ == '__main__':
 
+    import argparse
+    parser = argparse.ArgumentParser(description='Compute and fit the empirical CDF of speech')
+    parser.add_argument('--save', '-s', type=str,
+            help='A folder where to save the figure')
+    parser.add_argument('--fit', '-f', action='store_true',
+            help='Also plot the fitted line on top of the CDF')
+    parser.add_argument('--no_lut', action='store_false',
+            help='Do not save the LUT for the fitted curve')
+    parser.add_argument('--gen_code', action='store_true',
+            help='Generate the C code for the LUT')
+    args = parser.parse_args()
+
     #cmu = pra.datasets.CMUArcticCorpus(basedir='/Volumes/datanet/CMU_ARCTIC', build=True, speaker=['ahw', 'lnh'])
     timit = pra.datasets.TimitCorpus(basedir='/Users/scheibler/PHD/Projects/Beamforming/timit/TIMIT')
     timit.build_corpus()
@@ -61,7 +74,7 @@ if __name__ == '__main__':
 
     thresh = -60
     
-    y, x, _ = plt.hist(chunks_db[chunks_db > thresh], bins=10000, density=True, cumulative=True)
+    y, x, _ = plt.hist(chunks_db[chunks_db > thresh], bins=10000, density=True, cumulative=True, label='Empirical CDF')
     x = (x[:-1] + x[1:]) / 2
 
     dim = 10
@@ -72,34 +85,46 @@ if __name__ == '__main__':
 
     plt.plot(x, y_fit, 'r')
 
-    on_grid = np.polyval(c, np.arange(-60, 0))
-    lut = [[l,u] for l,u in zip(on_grid[:-1], on_grid[1:])]
+    # Fancy plot
+    plt.xlabel('Average Frame Power [dB]')
+    plt.title('Empirical CDF of Speech Power')
 
-    with open('lut_audio2pwm.json', 'w') as f:
-        info = {
-                'base' : thresh,
-                'lut' : lut,
-                'coef' : c.tolist(),
-                }
-        json.dump(info, f, indent=1)
+    if args.save is not None:
+        plot_fn = os.path.join(args.save, 'speech_cdf.pdf')
+        plt.savefig(plot_fn, dpi=300)
 
-    # print the value for insertions in the C code
 
-    print('float lut = {')
-    val_list = on_grid.tolist()
-    count = 0
-    while len(val_list) > 1:
-        v = val_list.pop(0)
-        print('{},'.format(v), end='')
-        count += 1
-        if count % 10 == 0:
-            print()
-            print('  ', end='')
-        else:
-            print(' ', end='')
+    # Save the LUT of the fitted curve
+    if not args.no_lut:
 
-    print('{}'.format(val_list[0]))
-    print('};')
+        on_grid = np.polyval(c, np.arange(-60, 0))
+        lut = [[l,u] for l,u in zip(on_grid[:-1], on_grid[1:])]
+
+        with open('lut_audio2pwm.json', 'w') as f:
+            info = {
+                    'base' : thresh,
+                    'lut' : lut,
+                    'coef' : c.tolist(),
+                    }
+            json.dump(info, f, indent=1)
+
+    if args.gen_code:
+        # print the value for insertions in the C code
+        print('float lut = {')
+        val_list = on_grid.tolist()
+        count = 0
+        while len(val_list) > 1:
+            v = val_list.pop(0)
+            print('{},'.format(v), end='')
+            count += 1
+            if count % 10 == 0:
+                print()
+                print('  ', end='')
+            else:
+                print(' ', end='')
+
+        print('{}'.format(val_list[0]))
+        print('};')
 
     plt.show()
 
