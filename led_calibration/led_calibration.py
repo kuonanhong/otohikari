@@ -1,4 +1,4 @@
-import json
+import json, os
 import numpy as np
 from scipy.optimize import least_squares
 
@@ -103,6 +103,10 @@ if __name__ == '__main__':
             help='LED color to process')
     parser.add_argument('--pwm', type=int,
             help='The number of bits of the PWM range')
+    parser.add_argument('--no_fit', action='store_true',
+            help='Do not plot the fit')
+    parser.add_argument('--save_plot', type=str,
+            help='The directory where to save the plot')
     args = parser.parse_args()
 
     with open(args.parameter_file, 'r') as f:
@@ -116,6 +120,8 @@ if __name__ == '__main__':
                 'lines.linewidth':1.,
                 'text.usetex': False,
                 })
+
+    x_max = 0
     
     for color, param in calib.items():
 
@@ -149,26 +155,41 @@ if __name__ == '__main__':
         label = color.capitalize() + ' channel'
 
         plt.plot(y, c=col)
-        plt.plot(x * y.shape[0], param['fit'], '--', c=col)
+
+        if not args.no_fit:
+            plt.plot(x * y.shape[0], param['fit'], '--', c=col)
+
         plt.ylabel('Norm. Intensity')
 
-        plt.xlim([0,y.shape[0]])
-        plt.ylim([0,1])
-
-        if args.pwm is not None:
-            if args.pwm > 0:
-                plt.xlabel('PWM Duty Cycle')
-                plt.xticks([0, 1], ['$0$', '$2^{' + str(args.pwm) + '}-1$'])
-            else:
-                plt.xlabel('Normalized Audio Power')
-                plt.xticks([0,1])
+        if y.shape[0] > x_max:
+            x_max = y.shape[0]
 
         print(color, param['coef'])
 
-    plt.xlim(0, 1)
-    sns.despine(left=True, bottom=True, offset=5)
+    if args.pwm is not None:
+        if args.pwm > 0:
+            plt.xlabel('PWM Duty Cycle')
+            #plt.xticks([0, x_max], ['$0$', '$2^{' + str(args.pwm) + '}-1$'])
+            plt.xticks([])
+        else:
+            plt.xlabel('Norm. Audio Power')
+            plt.xticks([])
+
+
+    plt.xlim(0, x_max)
+    plt.ylim([0,1])
+    plt.yticks([])
+
+    sns.despine(left=False, bottom=False, offset=5)
     plt.legend()
     plt.tight_layout(pad=0.1)
+
+    if args.save_plot is not None:
+        fn = os.path.split(args.parameter_file)[1]
+        fn = os.path.splitext(fn)[0] + '.pdf'
+        fn = os.path.join(args.save_plot, fn)
+        plt.savefig(fn)
+
     plt.show()
 
 
