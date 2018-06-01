@@ -148,19 +148,20 @@ if __name__ == '__main__':
 
         label = color.capitalize() + ' channel'
 
-        plt.plot(x, y, c=col)
-        plt.plot(x, param['fit'], '--', c=col)
+        plt.plot(y, c=col)
+        plt.plot(x * y.shape[0], param['fit'], '--', c=col)
         plt.ylabel('Norm. Intensity')
 
-        plt.xlim([0,1])
+        plt.xlim([0,y.shape[0]])
         plt.ylim([0,1])
 
         if args.pwm is not None:
-            plt.xlabel('PWM Duty Cycle')
-            plt.xticks([0, 1], ['$0$', '$2^{' + str(args.pwm) + '}-1$'])
-        else:
-            plt.xlabel('Normalized Audio Power')
-            plt.xticks([0,1])
+            if args.pwm > 0:
+                plt.xlabel('PWM Duty Cycle')
+                plt.xticks([0, 1], ['$0$', '$2^{' + str(args.pwm) + '}-1$'])
+            else:
+                plt.xlabel('Normalized Audio Power')
+                plt.xticks([0,1])
 
         print(color, param['coef'])
 
