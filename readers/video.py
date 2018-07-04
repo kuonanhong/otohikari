@@ -22,18 +22,21 @@ class FrameGrabber(object):
     def extract(self):
         return self.the_frame
 
+
 class ThreadedVideoStream(object):
     '''
     This class capture a video (either from live stream or file) using
     the opencv api in a separate thread.
-
     Parameters
     ----------
     video: int or str
         If an int, this is the index of the video stream. If a str, this is a filename.
     '''
 
-    def __init__(self, video, start=0, end=None):
+    def __init__(self, video, start=0, end=None, qmax_len=200):
+
+        # The maximum number of frames to buffer
+        self.qmax_len = qmax_len
 
         # we'll store frames there
         self.queue = queue.Queue()
@@ -55,7 +58,9 @@ class ThreadedVideoStream(object):
             raise ValueError('Couldn''t open the device.')
 
         if self._start != 0:
-            self.capture.set(1, self._start)  # set first frame to read
+            # So CAP_PROP_POS_FRAMES seems to be broken, per https://github.com/opencv/opencv/issues/9053
+            self.capture.set(1, self._start // 2)  # set first frame to read
+            print('Warning: setting start frame seems buggy (https://github.com/opencv/opencv/issues/9053). A hack was used. Use at your own risk')
 
         if self._end is not None:
             self._end = self._end - self._start
@@ -92,7 +97,6 @@ class ThreadedVideoStream(object):
     def read(self, n=1, block=True, timeout=1):
         '''
         Read some frames.
-
         Parameters
         ----------
         n: int
@@ -135,6 +139,10 @@ class ThreadedVideoStream(object):
         ''' This method will fetch the frames in a concurrent thread '''
 
         while not self._stopped:
+
+            if self.queue.qsize() >= self.qmax_len:
+                continue
+
             ret, frame = self.capture.read()
 
             self._count += 1

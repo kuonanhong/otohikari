@@ -33,15 +33,17 @@ def ccw3p(p1, p2, img_size):
 
     return ret
 
+
 class Tracker(ProcessorBase):
 
-    def __init__(self, protocol, red_thresh, bg_len, monitor=False, qlen=10):
+    def __init__(self, protocol, red_thresh, bg_len, search_box, monitor=False, qlen=10):
 
-        ProcessorBase.__init__(monitor=monitor, qlen=qlen)
+        ProcessorBase.__init__(self, monitor=monitor, qlen=qlen)
 
         self.protocol = protocol
         self.red_thresh = red_thresh
         self.bg_len = bg_len
+        self.search_box = search_box
 
         self.bg_set = []
         self.background = None
@@ -50,6 +52,7 @@ class Tracker(ProcessorBase):
 
         self.is_tracking = False
         self.current_location = None
+        self.val = [-1,-1,-1]
 
         self.f_counter = 0
         self.f_shape = None
@@ -101,21 +104,51 @@ class Tracker(ProcessorBase):
             self.bg_set.append(frame)
 
         elif self.f_counter == self.bg_len:
-            self.background[:,:,:] = np.mean(back_set, axis=0)
+            self.background[:,:,:] = np.mean(self.bg_set, axis=0)
 
         else:
+
+            # determinen search area
+            if self.current_location is None:
+                ylo = 0
+                xlo = 0
+                # no idea where to look...
+                sx = slice(None)
+                sy = slice(None)
+            else:
+                # look in a box around previous location
+                ylo = self.current_location[0] - self.search_box // 2
+                if ylo < 0:
+                    ylo = 0
+                yhi = self.current_location[0] + self.search_box // 2
+                sy = slice(
+                        ylo,
+                        yhi if yhi <= self.f_shape[0] else self.f_shape[0]
+                        )
+                xlo = self.current_location[1] - self.search_box // 2
+                if xlo < 0:
+                    xlo = 0
+                xhi = self.current_location[1] + self.search_box // 2
+                sx = slice(
+                        xlo,
+                        xhi if xhi <= self.f_shape[1] else self.f_shape[1]
+                        )
+
             # background subtraction, mask, thresholding
-            self.buffer_frame[:,:,2] = np.maximum(0, frame[:,:,2].astype(np.float) - self.background[:,:,2])
-            self.buffer_frame[:,:,2] = cv2.bitwise_and(self.buffer_frame[:,:,2], self.mask[:,:,2])
-            reddish = self.buffer_frame[:,:,2]
+            self.buffer_frame[:,:,:] = 0
+            self.buffer_frame[sy,sx,:] = np.maximum(0, frame[sy,sx,:].astype(np.float) - self.background[sy,sx,:])
+            self.buffer_frame[sy,sx,:] = cv2.bitwise_and(self.buffer_frame[sy,sx,:], self.mask[sy,sx,:])
+            reddish = self.buffer_frame[sy,sx,2]
 
             # find max intensity red pixel
             flat_ind = np.argmax(reddish.ravel())
             y, x = np.unravel_index(flat_ind, reddish.shape)
-            val = reddish[y,x]
+            self.val = reddish[y,x]
+            y += ylo
+            x += xlo
 
             # detect with threshold
-            if val > self.red_thresh:
+            if self.val > self.red_thresh:
                 self.current_location = [y, x]
                 self.trajectory.append([self.f_counter, self.current_location])
             else:
@@ -155,74 +188,24 @@ if __name__ == '__main__':
     # Create some random colors
     color = np.random.randint(0,255,(100,3))
 
+    tracker = Tracker(protocol, red_thresh=100, bg_len=400, search_box=300, monitor=True)
+
     with ThreadedVideoStream(video_path) as cap:
 
         cap.start()
 
-        # Take first frame and find corners in it
-        p0 = start_pixel
-
-        old_frame = cap.read()
-        old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
-
-        # Create a mask image for drawing purposes
-        background = np.zeros_like(old_frame)
-        new_frame = np.zeros_like(old_frame)
-        reddish = np.zeros_like(old_frame[:,:,2])
-
-        back_set = []
-        for i in range(400):
-            back_set.append(cap.read())
-        background = np.array(np.mean(back_set, axis=0), dtype=np.uint8)
-
-        # we need to create a second small mask for the
-        # reflection of the blinkies on the ground
-        p_lo = protocol['blinky_reflection_offset_param']['lo']
-        p_hi = protocol['blinky_reflection_offset_param']['hi']
-        def ref_interp(y, p_lo, p_hi):
-            c = (y - p_hi[0]) / (p_lo[0] - p_hi[0])
-            return c * (p_lo[1] - p_hi[1]) + p_hi[1]
-
-        # Create a mask of blinky locations
-        blinky_mask = 255 * np.ones_like(background)
-        for blinky in blinkies:
-            y,x = blinky.ravel()
-            blinky_mask = cv2.circle(blinky_mask, (x,y), 4, (0,0,0), -1)
-            # add the reflection
-            y_r = int(np.round(y + ref_interp(y, p_lo, p_hi)))
-            blinky_mask = cv2.circle(blinky_mask, (x,y_r), 4, (0,0,0), -1)
-
-        # create a mask to catch the floor only
-        floor_mask = 255 * np.ones_like(background)
-        for lbl, pm in protocol['floor_mask_param'].items():
-            p1,p2 = pm
-            m = ccw3p(p1, p2, floor_mask.shape[:2])
-            floor_mask *= np.array(1 - m, dtype=np.uint8)[:,:,None]
-
-        search_mask = cv2.bitwise_and(blinky_mask, floor_mask)
-
-        is_tracking = False
-
         while cap.is_streaming():
 
             frame = cap.read()
-
-            # background subtraction, mask, thresholding
-            new_frame[:,:,2] = np.maximum(0, frame[:,:,2].astype(np.float) - background[:,:,2])
-            new_frame[:,:,2] = cv2.bitwise_and(new_frame[:,:,2], search_mask[:,:,2])
-            reddish[:,:] = new_frame[:,:,2]
-
-            # find max intensity red pixel
-            flat_ind = np.argmax(reddish.ravel())
-            y, x = np.unravel_index(flat_ind, reddish.shape)
-            val = reddish[y,x]
-
-            # detect with threshold
-            if val > 150:
-                frame = cv2.circle(frame, (x,y), 5, color[0].tolist(), 1)
+            tracker(frame)
 
             if args.show:
-                cv2.putText(frame, str(val),(10,50), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2, cv2.LINE_AA)
+
+                if tracker.current_location is not None:
+                    y, x = tracker.current_location
+                    frame = cv2.circle(frame, (x,y), 5, color[0].tolist(), 1)
+
+                cv2.putText(frame, str(tracker.val),(10,50), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2, cv2.LINE_AA)
                 cv2.imshow('frame', frame)
 
             if args.mask:
@@ -232,11 +215,5 @@ if __name__ == '__main__':
             k = cv2.waitKey(1) & 0xff
             if k == 27:
                 break
-
-            # Now update the previous frame and previous points
-            '''
-            old_gray = frame_gray.copy()
-            p0 = good_new.reshape(-1,1,2)
-            '''
 
     cv2.destroyAllWindows()
