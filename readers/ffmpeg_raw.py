@@ -41,6 +41,8 @@ def _read_byte_stream(command, framesize, dtype, bufsize, readsize, online_func=
     bufsize_bytes = frame_byte_size * bufsize
     readsize_bytes = frame_byte_size * readsize
 
+    showed_frame = False
+
     with sp.Popen(command, stdout=sp.PIPE, bufsize=bufsize_bytes) as pipe:
         chunks = []
         while True:
@@ -51,7 +53,8 @@ def _read_byte_stream(command, framesize, dtype, bufsize, readsize, online_func=
 
             # apply a processing function on the streaming data
             if online_func is not None:
-                online_func(chunk)
+                for f in chunk:
+                    online_func(f)
 
             if keep_data:
                 chunks.append(chunk)
@@ -132,7 +135,9 @@ def ffmpeg_open_raw_video(filename, framesize, n_channels=3, dtype=np.uint8, buf
             '-i', filename, 
             '-f', 'image2pipe', 
             '-pix_fmt', 'rgb24', 
-            '-vcodec', 'rawvideo' ]
+            '-vcodec', 'rawvideo',
+            '-color_trc', 'linear',
+            ]
 
     if start is not None:
         command_v += [ '-ss', str(start) ]

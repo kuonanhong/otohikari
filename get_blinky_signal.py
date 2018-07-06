@@ -28,34 +28,34 @@ if __name__ == '__main__':
         data = json.load(f)
 
     if args.inspect is not None:
-        frame_grabber(data['white']['video_file'], frame=args.inspect, show=True)
-        sys.exit()
+        the_frame = frame_grabber(data['white']['video_file'], frame=args.inspect, show=True)
 
-    for color, param in data.items():
-        print(color,'...')
-        img = BoxCatcher([param['loc']],[param['h'], param['w']], monitor=True)
-        video_stream(param["video_file"],
-                start=param["start"], end=param["end"],
-                callback=img)
-        data[color]['data'] = img.extract().tolist()
-
-    if args.save is not None:
-        with open(args.save, 'w') as f:
-            json.dump(data, f, indent=1)
-
-    if args.plot:
-
+    else:
         for color, param in data.items():
-            curve = np.array(param['data'])
-            t = np.arange(curve.shape[0]) / param['fps']
-            if 'color_num' in data[color]:
-                plt.plot(t, curve[...,param['color_num']], label=color, c=color)
-            else:
-                plt.plot(t, curve.mean(axis=-1), label=color, c='k')
+            print(color,'...')
+            img = BoxCatcher([param['loc'][::-1]],[param['h'], param['w']], monitor=True)
+            video_stream(param["video_file"],
+                    start=param["start"], end=param["end"],
+                    callback=img)
+            data[color]['data'] = img.extract().tolist()
 
-        plt.title('Calibration curves')
-        plt.xlabel('time [sec]')
-        plt.ylabel('power')
-        plt.legend()
-        plt.xlim(0, t[-1])
-        plt.show()
+        if args.save is not None:
+            with open(args.save, 'w') as f:
+                json.dump(data, f, indent=1)
+
+        if args.plot:
+
+            for color, param in data.items():
+                curve = np.array(param['data'])
+                t = np.arange(curve.shape[0]) / param['fps']
+                if 'color_num' in data[color]:
+                    plt.plot(t, curve[...,param['color_num']], label=color, c=color)
+                else:
+                    plt.plot(t, curve.mean(axis=-1), label=color, c='k')
+
+            plt.title('Calibration curves')
+            plt.xlabel('time [sec]')
+            plt.ylabel('power')
+            plt.legend()
+            plt.xlim(0, t[-1])
+            plt.show()
