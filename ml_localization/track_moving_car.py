@@ -1,8 +1,10 @@
 import argparse, json, os
+import jsongzip
 import numpy as np
 import cv2
 import matplotlib.pyplot as plt
-from readers import ThreadedVideoStream, ProcessorBase
+from scipy.io import wavfile
+from readers import ThreadedVideoStream, ProcessorBase, PixelCatcher, BoxCatcher
 
 def ccw3p(p1, p2, img_size):
     '''
@@ -52,7 +54,7 @@ class Tracker(ProcessorBase):
 
         self.is_tracking = False
         self.current_location = None
-        self.val = [-1,-1,-1]
+        self.val = -1
 
         self.f_counter = 0
         self.f_shape = None
@@ -99,7 +101,7 @@ class Tracker(ProcessorBase):
             self.background = np.zeros_like(frame)
             self.buffer_frame = np.zeros_like(frame)
             self.make_mask()
-
+            
         if self.f_counter < self.bg_len:
             self.bg_set.append(frame)
 
@@ -121,18 +123,12 @@ class Tracker(ProcessorBase):
                 if ylo < 0:
                     ylo = 0
                 yhi = self.current_location[0] + self.search_box // 2
-                sy = slice(
-                        ylo,
-                        yhi if yhi <= self.f_shape[0] else self.f_shape[0]
-                        )
+                sy = slice(ylo, yhi if yhi <= self.f_shape[0] else self.f_shape[0])
                 xlo = self.current_location[1] - self.search_box // 2
                 if xlo < 0:
                     xlo = 0
                 xhi = self.current_location[1] + self.search_box // 2
-                sx = slice(
-                        xlo,
-                        xhi if xhi <= self.f_shape[1] else self.f_shape[1]
-                        )
+                sx = slice(xlo, xhi if xhi <= self.f_shape[1] else self.f_shape[1])
 
             # background subtraction, mask, thresholding
             self.buffer_frame[:,:,:] = 0
@@ -149,8 +145,9 @@ class Tracker(ProcessorBase):
 
             # detect with threshold
             if self.val > self.red_thresh:
-                self.current_location = [y, x]
+                self.current_location = [y.tolist(), x.tolist()]
                 self.trajectory.append([self.f_counter, self.current_location])
+
             else:
                 self.current_location = None
 
@@ -158,6 +155,65 @@ class Tracker(ProcessorBase):
         return self.trajectory
 
 
+def max_no_sat(X, mask, axis=-1, sat=255):
+    '''
+    picks the column with maximum value that doesn't saturate
+    X is (n_frames, n_pixels, n_box)
+    '''
+
+    n_frames, n_pxls, n_box = X.shape
+
+    locs = np.zeros(n_pxls, dtype=np.int)
+    max_val = np.zeros(n_pxls)
+
+    for pxl in range(n_pxls):
+
+        not_found = False
+
+        for b in range(n_box):
+
+            m = np.max(X[mask,pxl,b])
+            if m == sat:
+                continue
+
+            avg = m
+            if avg > max_val[pxl]:
+                max_val[pxl] = avg
+                locs[pxl] = b
+
+    return np.hstack([X[:,pxl,locs[pxl],None] for pxl in range(n_pxls)])
+
+def avg_no_sat(X, mask, axis=-1, sat=255):
+    '''
+    picks the column with maximum value that doesn't saturate
+    X is (n_frames, n_pixels, n_box)
+    '''
+
+    n_frames, n_pxls, n_box = X.shape
+
+    locs = np.zeros(n_pxls, dtype=np.int)
+    max_val = np.zeros(n_pxls)
+
+    ret = np.zeros((X.shape[:2]), dtype=np.uint8)
+
+    for pxl in range(n_pxls):
+
+        not_found = False
+        no_sat_set = []
+
+        for b in range(n_box):
+
+            m = np.max(X[mask,pxl,b])
+            if m == sat:
+                continue
+            else:
+                no_sat_set.append(b)
+
+        if len(no_sat_set) > 0:
+            ret[:,pxl] = np.mean(X[:,pxl,no_sat_set].astype(np.float), axis=1).astype(np.uint8)
+
+    return ret
+    
 
 if __name__ == '__main__':
 
@@ -172,6 +228,8 @@ if __name__ == '__main__':
             help='Show the video')
     parser.add_argument('-m', '--mask', action='store_true',
             help='Display the masked video')
+    parser.add_argument('-t', '--track', action='store_true',
+            help='Track the RC car')
     args = parser.parse_args()
 
     # get the path to the experiment files
@@ -188,32 +246,91 @@ if __name__ == '__main__':
     # Create some random colors
     color = np.random.randint(0,255,(100,3))
 
-    tracker = Tracker(protocol, red_thresh=100, bg_len=400, search_box=300, monitor=True)
+    boxer = BoxCatcher(blinkies, [5, 5], monitor=True)
+    catcher = PixelCatcher(blinkies)
+    tracker = ( Tracker(protocol=protocol, red_thresh=100, bg_len=400, search_box=300) if args.track else None )
 
     with ThreadedVideoStream(video_path) as cap:
 
         cap.start()
+        fps = cap.get_fps()
 
         while cap.is_streaming():
 
             frame = cap.read()
-            tracker(frame)
+
+            if frame is None:
+                break
+
+            catcher(frame[None,])
+            boxer(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)[:,:,None])
+
+            if tracker is not None:
+                tracker(frame)
 
             if args.show:
 
-                if tracker.current_location is not None:
+                if tracker is not None and tracker.current_location is not None:
                     y, x = tracker.current_location
                     frame = cv2.circle(frame, (x,y), 5, color[0].tolist(), 1)
 
-                cv2.putText(frame, str(tracker.val),(10,50), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2, cv2.LINE_AA)
+                cv2.putText(frame, str(tracker.val),(10,50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2, cv2.LINE_AA)
                 cv2.imshow('frame', frame)
 
-            if args.mask:
-                cv2.putText(reddish, str(val),(10,50), cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2, cv2.LINE_AA)
+            if tracker is not None and args.mask:
+                cv2.putText(tracker.buffer_frame, str(tracker.val), (10,50),
+                        cv2.FONT_HERSHEY_SIMPLEX, 2, (255,255,255), 2, cv2.LINE_AA)
                 cv2.imshow('with mask', reddish)
 
-            k = cv2.waitKey(1) & 0xff
-            if k == 27:
-                break
+            if args.show or args.mask:
+                k = cv2.waitKey(1) & 0xff
+                if k == 27:
+                    break
 
     cv2.destroyAllWindows()
+
+    print('Now saving the data...')
+
+    # Now save this data
+    proc_path = os.path.join(experiment_path, 'processed')
+    if not os.path.exists(proc_path):
+        os.mkdir(proc_path)
+
+    # save blinky signal in wavfile
+    blinky_fn = os.path.join(proc_path, args.video + '_blinky_signal.wav')
+    blinky_gray = np.squeeze(np.array(boxer.values))
+
+    mask = np.ones(blinky_gray.shape[0], dtype=np.bool)
+    if args.video in protocol['mask_ignore_frames']:
+        mask[protocol['mask_ignore_frames'][args.video]] = False
+
+    blinky_sel = avg_no_sat(blinky_gray, mask=mask)
+    wavfile.write(blinky_fn, int(np.round(fps)), blinky_sel)
+
+    # save the tracked RC car locations
+    if tracker is not None:
+        source_loc_fn = os.path.join(proc_path, args.video + '_source_locations.json.gz')
+        source_locations = tracker.get_locations()
+        jsongzip.dump(source_loc_fn, source_locations)
+
+    print('All done. Good bye.')
+
+    def show_10by10(blinkies, row=2, col=5):
+        n_fig = row * col
+
+        for i in range(int(blinkies.shape[1] / n_fig + 0.5)):
+            plt.figure()
+            for j in range(n_fig):
+                blk_ind = i * n_fig + j
+                if blk_ind > blinkies.shape[1]:
+                    break
+                plt.subplot(row, col, j+1)
+                plt.plot(blinkies[:,blk_ind])
+                plt.title(str(blk_ind))
+                plt.xticks([])
+                plt.yticks([])
+                plt.xlim([0, blinkies.shape[0]])
+                plt.ylim([0, 255])
+            plt.tight_layout(pad=0.1)
+
