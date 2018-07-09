@@ -40,13 +40,15 @@ def main():
 
     epoch = config['training']['epoch']
     batchsize = config['training']['batchsize']
+    out_dir = config['training']['out'] if 'out' in config['training'] else 'result'
 
     print('# Minibatch-size: {}'.format(batchsize))
     print('# epoch: {}'.format(epoch))
     print('')
 
     devices = {'main':0, 'second':2, 'third':3, 'fourth':4, 'fifth':5}
-    chainer.cuda.get_device_from_id(devices['main']).use()
+    gpu = config['training']['gpu'] if 'gpu' in config['training'] else 'main'
+    chainer.cuda.get_device_from_id(devices[gpu]).use()
 
     # Set up a neural network to train
     # Classifier reports mean squared error
@@ -77,11 +79,11 @@ def main():
 
     # Set up a trainer
     #updater = training.ParallelUpdater(train_iter, optimizer, devices=devices)
-    updater = training.StandardUpdater(train_iter, optimizer, device=devices['main'])
-    trainer = training.Trainer(updater, (epoch, 'epoch'), out=args.out)
+    updater = training.StandardUpdater(train_iter, optimizer, device=devices[gpu])
+    trainer = training.Trainer(updater, (epoch, 'epoch'), out=out_dir)
 
     # Evaluate the model with the test dataset for each epoch
-    trainer.extend(extensions.Evaluator(validate_iter, model, device=devices['main']))
+    trainer.extend(extensions.Evaluator(validate_iter, model, device=devices[gpu]))
 
     # Dump a computational graph from 'loss' variable at the first iteration
     # The "main" refers to the target link of the "main" optimizer.

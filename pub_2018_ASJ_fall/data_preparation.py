@@ -60,6 +60,10 @@ if __name__ == '__main__':
         else:
             ignore_list = set([])  # nothing
 
+        # valid blinky mask
+        blinky_valid_mask = np.ones(blinky_sig.shape[1], dtype=np.bool)
+        blinky_valid_mask[protocol['blinky_ignore']] = False
+
         # the intervals
         parallel_short = protocol['video_segmentation'][video]['parallel_short']
         parallel_long = protocol['video_segmentation'][video]['parallel_long']
@@ -72,7 +76,7 @@ if __name__ == '__main__':
                 continue
 
             tau = frame / protocol['video_info']['fps']
-            in_vec = np.mean(blinky_sig[frame-nf:frame+nf+1,:], axis=0)
+            in_vec = np.mean(blinky_sig[frame-nf:frame+nf+1,blinky_valid_mask], axis=0)
             in_vec /= in_vec.max()
 
             example = [in_vec.tolist(), src_loc]
