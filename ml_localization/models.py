@@ -60,10 +60,11 @@ class ResBlock(chainer.Chain):
 
 class ResReg(chainer.Chain):
 
-    def __init__(self, n_res, n_res_in, n_hidden, n_out):
+    def __init__(self, n_res, n_res_in, n_hidden, n_out, dropout=None):
         super(ResReg, self).__init__()
         with self.init_scope():
 
+            self.dropout = dropout
             self.input = L.Linear(None, n_res_in)
             self.res_blocks = chainer.ChainList(
                     *[ResBlock(n_res_in, n_hidden) for n in range(n_res)]
@@ -73,6 +74,9 @@ class ResReg(chainer.Chain):
     def __call__(self, x):
 
         h = F.relu(self.input(x))
+
+        if self.dropout is not None:
+            h = F.dropout(h, ratio=self.dropout)
 
         for R in self.res_blocks:
             h = F.relu(R(h))

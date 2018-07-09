@@ -5,12 +5,12 @@
 
   "training" : {
     "batchsize" : 1000,
-    "epoch" : 1000
+    "epoch" : 10000
   },
 
   "model" : {
     "name" : "MLP",
-    "args" : [[200, 100,], 2],
+    "args" : [[200, 100], 2],
     "kwargs" : {},
     "file" : "pub_2018_ASJ_fall/dnn/models/mlp_blinky_locator.npz"
   },

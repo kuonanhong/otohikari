@@ -14,8 +14,18 @@ if __name__ == '__main__':
 
     import argparse
     parser = argparse.ArgumentParser(description='Run a model on a test set')
+    parser.add_argument('protocol', type=str,
+            help='The protocol file containing the experiment metadata')
     parser.add_argument('config', type=str, help='The JSON file containing the configuration.')
     args = parser.parse_args()
+
+    # Read some parameters from the protocol
+    with open(args.protocol,'r') as f:
+        protocol = json.load(f)
+
+    # valid blinky mask
+    blinky_valid_mask = np.ones(len(protocol['blinky_locations']), dtype=np.bool)
+    #blinky_valid_mask[protocol['blinky_ignore']] = False
 
     with open(args.config, 'r') as f:
         config = json.load(f)
@@ -36,30 +46,32 @@ if __name__ == '__main__':
 
     table = []
 
-    for (example, label) in train:
-        # get all samples with the correct noise variance
-        table.append([
-                    np.linalg.norm(label[:2] - np.squeeze(nn(example).data)), 
-                    'train',  # noise variance,
-                    ])
+    with chainer.using_config('train', False):
 
-    for (example, label) in validate:
-        # get all samples with the correct noise variance
-        table.append([
-                    np.linalg.norm(label[:2] - np.squeeze(nn(example).data)), 
-                    'validate',  # noise variance,
-                    ])
+        for (example, label) in train:
+            # get all samples with the correct noise variance
+            table.append([
+                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,blinky_valid_mask]).data)), 
+                        'train',  # noise variance,
+                        ])
 
-    for (example, label) in test:
-        # get all samples with the correct noise variance
-        table.append([
-                    np.linalg.norm(label[:2] - np.squeeze(nn(example).data)), 
-                    'test',  # noise variance,
-                    ])
+        for (example, label) in validate:
+            # get all samples with the correct noise variance
+            table.append([
+                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,blinky_valid_mask]).data)), 
+                        'validate',  # noise variance,
+                        ])
+
+        for (example, label) in test:
+            # get all samples with the correct noise variance
+            table.append([
+                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,blinky_valid_mask]).data)), 
+                        'test',  # noise variance,
+                        ])
 
     df = pd.DataFrame(data=table, columns=['Error', 'Set'])
 
     sns.violinplot(data=df, x='Set', y='Error')
-    #plt.ylim([-2.5, 1])
-    #plt.savefig('pub_2018_ASJ_fall/mse.pdf')
+    plt.ylim([0, 200])
+    plt.savefig('pub_2018_ASJ_fall/mse_{}.pdf'.format(config['name']))
     plt.show()
