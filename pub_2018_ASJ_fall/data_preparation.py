@@ -22,6 +22,8 @@ if __name__ == '__main__':
             help='The number of frames to average to create one input vector')
     parser.add_argument('-v', '--validation_frac', type=int, default=10,
             help='The number of examples out of one which is kept for validation')
+    parser.add_argument('--trim_flat', type=float,
+            help='Skip vectors whose difference (max - min) is less than the given number')
     args = parser.parse_args()
 
     # get the path to the experiment files
@@ -75,6 +77,9 @@ if __name__ == '__main__':
             in_vec = np.mean(blinky_sig[frame-nf:frame+nf+1,:], axis=0)
             in_vec /= in_vec.max()
 
+            if args.trim_flat is not None and np.max(in_vec) - np.min(in_vec) < args.trim_flat:
+                continue
+
             example = [in_vec.tolist(), src_loc]
 
             if in_interval(tau, parallel_short) or in_interval(tau, parallel_long):
@@ -96,4 +101,9 @@ if __name__ == '__main__':
     if not os.path.exists(dest_dir):
         os.mkdir(dest_dir)
 
-    jsongzip.dump(os.path.join(dest_dir, 'data.json.gz'), data)
+    if args.trim_flat is None:
+        data_fn = 'data.json.gz'
+    else:
+        data_fn = 'data_trim_flat_{}.json.gz'.format(args.trim_flat)
+
+    jsongzip.dump(os.path.join(dest_dir, data_fn), data)
