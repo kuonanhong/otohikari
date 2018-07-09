@@ -96,4 +96,4 @@ if __name__ == '__main__':
     if not os.path.exists(dest_dir):
         os.mkdir(dest_dir)
 
-    jsongzip.dump(os.path.join(dest_dir, 'data.json.gzip'), data)
+    jsongzip.dump(os.path.join(dest_dir, 'data.json.gz'), data)

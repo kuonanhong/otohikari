@@ -44,12 +44,12 @@ class ResBlock(chainer.Chain):
         the width of the block
     '''
 
-    def __init__(self, n):
+    def __init__(self, n, n_hidden):
         super(ResBlock, self).__init__()
         with self.init_scope():
 
-            self.hidden1 = L.Linear(n, n)
-            self.hidden2 = L.Linear(n, n)
+            self.hidden1 = L.Linear(n, n_hidden)
+            self.hidden2 = L.Linear(n_hidden, n)
 
     def __call__(self, x):
         h = x
@@ -60,15 +60,15 @@ class ResBlock(chainer.Chain):
 
 class ResReg(chainer.Chain):
 
-    def __init__(self, n_res, n_hidden, n_out):
+    def __init__(self, n_res, n_res_in, n_hidden, n_out):
         super(ResReg, self).__init__()
         with self.init_scope():
 
-            self.input = L.Linear(None, n_hidden)
+            self.input = L.Linear(None, n_res_in)
             self.res_blocks = chainer.ChainList(
-                    *[ResBlock(n_hidden) for n in range(n_res)]
+                    *[ResBlock(n_res_in, n_hidden) for n in range(n_res)]
                     )
-            self.output = L.Linear(n_hidden, n_out)
+            self.output = L.Linear(n_res_in, n_out)
 
     def __call__(self, x):
 

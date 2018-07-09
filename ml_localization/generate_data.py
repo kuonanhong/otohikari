@@ -2,7 +2,7 @@
 This script generates simulated power intensity data to train
 a localization network.
 '''
-import itertools, json, os
+import itertools, json, os, pickle
 import datetime
 
 import numpy as np
@@ -19,11 +19,17 @@ from functools import partial
 
 import jsongzip
 
+# cache file for the cmu corpus
+cmu_arctic_cache_file = '.cmu_arctic_cache.pickle'
+cmu_arctic = None  # this is a placeholder for the dataset
+cmu_arctic_split = None  # this is a placeholder for the dataset
+
 parameters = dict(
         # simulation parameters
         sample_length = 0.5,      # length of audio sample in seconds
         gain_range = [-3., 3., 5],  # source gains, 5 points from -3dB to 3dB
         noise_var = [1e-9, 1e-8, 1e-7, 1e-6, 1e-5, 1e-4, 1e-3, 1e-2, 1e-1],
+        sound_types = ['white noise', 'CMU ARCTIC speech'],
         grid_step = 0.05,
         n_test = 100,            # number of validation points
         n_validation = 1000,
@@ -48,17 +54,37 @@ parameters = dict(
         fs_light = 32,
 
         # output parameters
-        output_dir = '/data/robin/ml_loc_data',
+        output_dir = '/datanet/robin/ml_loc_data',
         output_file_template = 'light_{}_{}.wav',
         base_dir = os.getcwd(),
         )
 
-def split_speakers(seed=0, split=None):
+
+def load_cmu_arctic(basedir='/datanet/CMU_ARCTIC'):
+    global cmu_arctic
+
+    if os.path.exists(cmu_arctic_cache_file):
+        # read from cache file
+        with open(cmu_arctic_cache_file, 'rb') as f:
+            cmu_arctic = pickle.load(f)
+    else:
+        # load the corpus
+        cmu_arctic = pyroomacoustics.datasets.CMUArcticCorpus(basedir=basedir)
+        # write cache file
+        with open(cmu_arctic_cache_file, 'wb') as f:
+            pickle.dump(cmu_arctic, f)
+
+    return cmu_arctic
+
+
+def cmu_arctic_splitter(cmu_arctic, seed=0, split=None):
     '''
     Split the speakers into train/validate/test
 
     Parameters
     ----------
+    cmu_arctic: pyroomacoustics.datasets.CMUArcticCorpus
+        The CMU ARCTIC corpus
     seed: int
         De-randomize by fixing the seed
     split: list of 3 int
@@ -68,37 +94,83 @@ def split_speakers(seed=0, split=None):
     import random
 
     if split is None:
-        split = { 'train' : 2, 'validate' : 2, 'test' : 3 }
+        split = { 'train' : 0.4, 'validate' : 0.2, 'test' : 0.4 }
 
-    speakers = pyroomacoustics.datasets.cmu_arctic_speakers
 
     # split male/female speakers to ensure good ratios
+    speakers = pyroomacoustics.datasets.cmu_arctic_speakers
     spkr_f = list(filter(lambda s : speakers[s]['sex'] == 'female', speakers))
     spkr_m = list(filter(lambda s : speakers[s]['sex'] == 'male', speakers))
 
+    # use only sentences existing for all speakers
+    tags = []
+    for tag, number in cmu_arctic.info['tag'].items():
+        if number == len(speakers):
+            tags.append(tag)
+    n_tags = len(tags)
+
+    # "randomize"
     random.seed(seed)
     random.shuffle(spkr_m)
     random.shuffle(spkr_f)
+    random.shuffle(tags)
 
+    # get the last few elements of a list
     pick = lambda L,n : [L.pop() for i in range(n)]
 
-    sets = {
-            'train' : pick(spkr_m, split['train']) + pick(spkr_f, split['train']),
-            'validate' : pick(spkr_m, split['validate']) + pick(spkr_f, split['validate']),
-            'test' : pick(spkr_m, split['test']) + pick(spkr_f, split['test']),
-            }
+    sets = {}
+    n_spkr = min(len(spkr_f), len(spkr_m))
+    for subset in split.keys():
+        sets[subset] = {}
+        n_pick = round(n_spkr * split[subset])
+        sets[subset]['speaker'] = pick(spkr_f, n_pick) + pick(spkr_m, n_pick)
+        sets[subset]['tag'] = pick(tags, round(n_tags * split[subset]))
 
-    return sets
 
+
+    sub_corpus = {}
+    for subset, selectors in sets.items():
+        sub_corpus[subset] = cmu_arctic.filter(**selectors)
+
+    return sub_corpus
+
+def cmu_arctic_random_sample(corpus, duration, normalize=True):
+    ''' Returns a random sample of duration [s] from corpus '''
+
+    # pick a sentence at random
+    import random
+    sentence = random.choice(corpus.samples)
+
+    n_samples = int(duration * sentence.fs)
+    trunc_len = (sentence.data.shape[0] // n_samples) * n_samples
+    chopped = sentence.data[:trunc_len].reshape((-1,n_samples))
+
+    # estimate power during silence
+    silence_pwr = np.mean(sentence.data[:100]**2)
+
+    # choose at random a frame with more than 2x power of silence
+    chopped_pwr = np.mean(chopped.astype(np.float)**2, axis=1)
+    I = np.where(chopped_pwr > 2 * silence_pwr)[0]
+    frame_index = random.choice(I)
+    rand_sample = chopped[random.choice(I)].astype(np.float)
+
+    # normalize to have unit power
+    if normalize:
+        rand_sample /= np.linalg.norm(rand_sample)
+
+    sample_id = '_'.join([sentence.meta.speaker, sentence.meta.tag, str(frame_index * n_samples)])
+
+
+    return rand_sample, sample_id
+
+    
 def simulate(args):
     import os, sys
     import numpy as np
     from scipy.io import wavfile
 
-    signal = args[0]
-    location = args[1]
-    noise_var = args[2]
-    index = args[3]
+    # extract arguments
+    (sound_type, sid, signal, gain, location, noise_var, index) = args
 
     room_dim = parameters['room_dim']
     fs_sound = parameters['fs_sound']
@@ -129,17 +201,13 @@ def simulate(args):
     outputs = dict()
 
     # add the source to the room
-    G = 10 ** (signal['gain'] / 20)  # dB -> linear
-    room.sources[0].signal = signal['data'] * G
+    G = 10 ** (gain / 20)  # dB -> linear
+    room.sources[0].signal = signal * G
 
     # Simulate sound transport
     room.simulate()
 
-    # add the filename to the dictionary
-    metadata = signal.copy()
-    metadata.pop('data')  # remove the data array
-    metadata['location'] = location
-    metadata['filename'] = filename
+    labels = location + [noise_var, gain, label, sid, index]
 
     return [room.mic_array.signals.T.tolist(), np.r_[location, signal['gain'], noise_var].tolist()]
 
@@ -155,7 +223,25 @@ def filter_points(parameters, points, min_dist=0.1):
 
     return points[I,:]
 
-def generate_args(parameters, sound_type='wn'):
+def get_data(sound_type, duration, fs, corpus=None):
+
+    n_samples = int(duration * fs)
+
+    if sound_type == 'white noise':
+        data = np.random.randn(n_samples)
+        sample_id = 'na'
+
+    elif sound_type == 'CMU ARCTIC speech':
+        if corpus is None:
+            corpus = cmu_arctic
+        data, sample_id = cmu_arctic_random_sample(corpus, duration)
+
+    else:
+        raise ValueError('Unsupported sound type: {}'.format(sound_type))
+
+    return data, sample_id
+
+def generate_args(parameters):
 
     # Generate the training data on a grid
     # grid the room
@@ -164,22 +250,21 @@ def generate_args(parameters, sound_type='wn'):
     grid = itertools.product(*pos)
     grid = filter_points(parameters, np.array(list(grid)))
 
+    sound_types = parameters['sound_types']
+
     # grid the gains
     gains = np.linspace(*parameters['gain_range'])
+
+    # The format of one line of args is
+    ## sound_type, gain, point, noise_var, index
 
     # generate the argument for training data
     train_args = []
     index = 0
-    for point in grid:
-        for gain in gains:
-            data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
-            train_args.append([ 
-                dict(data=data, gain = gain, label='wn'),
-                tuple(point.tolist()),
-                0.,  # no noise
-                index,
-                ])
-            index += 1
+    for point, gain, snd_label in itertools.product(grid, gains, sound_types):
+        sound, sid = get_data(snd_label, parameters['sample_length'], parameters['fs_sound'], corpus=cmu_arctic_split['train'])
+        train_args.append([ snd_label, sid, sound, gain, tuple(point.tolist()), 0., index, ])
+        index += 1
 
     # Generate the validation data at random locations in the room
     n_validation = parameters['n_validation']
@@ -189,14 +274,10 @@ def generate_args(parameters, sound_type='wn'):
 
     validation_args = []
     for point, gain in zip(points, gains):
-        data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
-        validation_args.append([ 
-            dict(data=data, gain=gain.tolist(), label='wn',),
-            tuple(point.tolist()),
-            0.,  # no noise
-            index,
-            ])
-        index += 1
+        for snd_label in sound_types:
+            sound, sid = get_data(snd_label, parameters['sample_length'], parameters['fs_sound'], corpus=cmu_arctic_split['validate'])
+            validation_args.append([ snd_label, sid, sound, gain, tuple(point.tolist()), 0., index, ])
+            index += 1
 
     # Generate the test data with various levels of noise
     n_test = parameters['n_test']
@@ -206,29 +287,33 @@ def generate_args(parameters, sound_type='wn'):
 
     test_args = []
     for point, gain in zip(points, gains):
-        for var in parameters['noise_var']:
-            data = np.random.randn(int(parameters['fs_sound'] * parameters['sample_length']))
-            test_args.append([ 
-                dict(data=data, gain=gain.tolist(), label='wn',),
-                tuple(point.tolist()),
-                var,
-                index,
-                ])
-            index += 1
+        for snd_label in sound_types:
+            for var in parameters['noise_var']:
+                sound, sid = get_data(snd_label, parameters['sample_length'], parameters['fs_sound'], corpus=cmu_arctic_split['test'])
+                test_args.append([ snd_label, sid, sound, gain, tuple(point.tolist()), var, index, ])
+                index += 1
 
     return train_args, validation_args, test_args
 
 
 if __name__ == '__main__':
+    global cmu_subsets
 
     import argparse
     parser = argparse.ArgumentParser(description='Create training data for ML-based localization')
-    parser.add_argument('--perfect_model', action='store_true', help='Use a simple decay exponent rather than room simulation')
-    parser.add_argument('--alpha', type=float, default=1., help='The decay exponent for the perfect model.')
     args = parser.parse_args()
 
-    train_args, validate_args, test_args = generate_args(parameters, perfect_model=args.perfect_model, alpha=args.alpha)
+    # Load the database
+    cmu_arctic = load_cmu_arctic()
+    cmu_arctic_split = cmu_arctic_splitter(cmu_arctic)
 
+    # Generate the arguments
+    train_args, validate_args, test_args = generate_args(parameters)
+
+    import pdb
+    pdb.set_trace()
+
+    # Start parallel stuff
     c = ipp.Client()
     lbv = c.load_balanced_view()
     lbv.register_joblib_backend()
@@ -250,24 +335,17 @@ if __name__ == '__main__':
     with c[:].sync_imports():
         import pyroomacoustics
 
-    if args.perfect_model:
-        metadata_train = lbv.map_sync(energy_decay, train_args)
-        metadata_validate = lbv.map_sync(energy_decay, validate_args)
-        metadata_test = lbv.map_sync(energy_decay, test_args)
-    else:
-        metadata_train = lbv.map_sync(simulate, train_args)
-        metadata_validate = lbv.map_sync(simulate, validate_args)
-        metadata_test = lbv.map_sync(simulate, test_args)
+    # Now run the parallel beast
+    metadata_train = lbv.map_sync(simulate, train_args)
+    metadata_validate = lbv.map_sync(simulate, validate_args)
+    metadata_test = lbv.map_sync(simulate, test_args)
 
     metadata = { 'parameters' : parameters, 'train' : metadata_train, 'validation' : metadata_validate, 'test' : metadata_test }
 
     now = datetime.datetime.now()
     timestamp = datetime.datetime.strftime(now, '%Y%m%d-%H%M%S')
 
-    if args.perfect_model:
-        filename = os.path.join(parameters['output_dir'], 'metadata_train_test_model_alpha{:.1f}.json'.format(args.alpha))
-    else:
-        filename = os.path.join(parameters['output_dir'], '{}_metadata_train_test.json'.format(timestamp))
+    filename = os.path.join(parameters['output_dir'], '{}_metadata_train_test.json'.format(timestamp))
 
     # save to gzipped json file
     jsongzip.dump(filename, metadata)
