@@ -27,6 +27,11 @@ def get_formatters(method='reshape', frames=(1,16), outputs=(0,2)):
         def data_formatter(e):
             return np.array(e, dtype=np.float32)[slice(*frames),:].mean(axis=0, keepdims=True)
 
+    elif method == 'none':
+
+        def data_formatter(e):
+            return np.array(e, dtype=np.float32).reshape((1,-1))
+
     def label_formatter(l):
         return np.array(l[slice(*outputs)], dtype=np.float32)
 

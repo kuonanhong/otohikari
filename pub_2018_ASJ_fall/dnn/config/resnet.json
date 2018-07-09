@@ -1,18 +1,18 @@
 {
-  "name" : "MLP_2layers_avg",
+  "name" : "resnet",
 
   "description" : "Multi-layer perceptron with 2 layers, each half the nodes of the previous one.",
 
   "training" : {
     "batchsize" : 1000,
-    "epoch" : 1000
+    "epoch" : 10000
   },
 
   "model" : {
-    "name" : "MLP",
-    "args" : [[200, 100,], 2],
+    "name" : "ResReg",
+    "args" : [20, 100, 10, 2],
     "kwargs" : {},
-    "file" : "pub_2018_ASJ_fall/dnn/models/mlp_blinky_locator.npz"
+    "file" : "pub_2018_ASJ_fall/dnn/models/resnet.npz"
   },
 
   "data" : {
