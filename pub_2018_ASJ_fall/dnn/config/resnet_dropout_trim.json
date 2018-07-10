@@ -5,16 +5,15 @@
 
   "training" : {
     "batchsize" : 1000,
-    "epoch" : 10000,
-    "out" : "pub_2018_ASJ_fall/dnn/results/resnet_dropout_trim",
-    "gpu" : "fourth"
+    "epoch" : 20000,
+    "out" : "pub_2018_ASJ_fall/dnn/results/resnet_dropout_trim"
   },
 
   "model" : {
     "name" : "ResReg",
-    "args" : [15, 100, 10, 2],
+    "args" : [10, 100, 10, 2],
     "kwargs" : {
-      "dropout" : 0.25
+      "dropout" : 0.1
     },
     "file" : "pub_2018_ASJ_fall/dnn/models/resnet_dropout_trim.npz"
   },
