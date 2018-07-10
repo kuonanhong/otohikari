@@ -11,9 +11,9 @@
 
   "model" : {
     "name" : "ResReg",
-    "args" : [10, 100, 10, 2],
+    "args" : [15, 100, 10, 2],
     "kwargs" : {
-      "dropout" : 0.1
+      "dropout" : 0.25
     },
     "file" : "pub_2018_ASJ_fall/dnn/models/resnet_dropout_trim.npz"
   },

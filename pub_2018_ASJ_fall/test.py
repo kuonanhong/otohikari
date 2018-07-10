@@ -51,21 +51,21 @@ if __name__ == '__main__':
         for (example, label) in train:
             # get all samples with the correct noise variance
             table.append([
-                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,blinky_valid_mask]).data)), 
+                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,:]).data)), 
                         'train',  # noise variance,
                         ])
 
         for (example, label) in validate:
             # get all samples with the correct noise variance
             table.append([
-                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,blinky_valid_mask]).data)), 
+                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,:]).data)), 
                         'validate',  # noise variance,
                         ])
 
         for (example, label) in test:
             # get all samples with the correct noise variance
             table.append([
-                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,blinky_valid_mask]).data)), 
+                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,:]).data)), 
                         'test',  # noise variance,
                         ])
 
