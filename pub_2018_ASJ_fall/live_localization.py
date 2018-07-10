@@ -39,6 +39,10 @@ if __name__ == '__main__':
             'processed/{}_blinky_signal.wav'.format(args.video))
     _, blinky_sig = wavfile.read(blinky_fn)
 
+    # valid blinky mask
+    blinky_valid_mask = np.ones(blinky_sig.shape[1], dtype=np.bool)
+    blinky_valid_mask[protocol['blinky_ignore']] = False
+
     # read in the groundtruth locations
     source_loc_fn = os.path.join(experiment_path,
             'processed/{}_source_locations.json.gz'.format(args.video))
@@ -87,8 +91,8 @@ if __name__ == '__main__':
 
             if i_frame >= nf:
                 # perform localization
-                nn_in = np.mean(blinky_sig[i_frame-nf:i_frame+nf+1,:], axis=0)
-                #nn_in -= nn_in.min()
+                nn_in = np.mean(blinky_sig[i_frame-nf:i_frame+nf+1,blinky_valid_mask], axis=0)
+                nn_in -= nn_in.min()
                 nn_in /= nn_in.max()
                 nn_in = nn_in[None,:].astype(np.float32)
 

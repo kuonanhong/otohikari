@@ -14,18 +14,8 @@ if __name__ == '__main__':
 
     import argparse
     parser = argparse.ArgumentParser(description='Run a model on a test set')
-    parser.add_argument('protocol', type=str,
-            help='The protocol file containing the experiment metadata')
     parser.add_argument('config', type=str, help='The JSON file containing the configuration.')
     args = parser.parse_args()
-
-    # Read some parameters from the protocol
-    with open(args.protocol,'r') as f:
-        protocol = json.load(f)
-
-    # valid blinky mask
-    blinky_valid_mask = np.ones(len(protocol['blinky_locations']), dtype=np.bool)
-    #blinky_valid_mask[protocol['blinky_ignore']] = False
 
     with open(args.config, 'r') as f:
         config = json.load(f)
@@ -50,28 +40,35 @@ if __name__ == '__main__':
 
         for (example, label) in train:
             # get all samples with the correct noise variance
+            e = np.squeeze(nn(example[:,:]).data) - label[:2]
             table.append([
-                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,:]).data)), 
-                        'train',  # noise variance,
-                        ])
+                'train',  # noise variance,
+                np.linalg.norm(e),
+                ] + e.tolist())
 
         for (example, label) in validate:
             # get all samples with the correct noise variance
+            e = np.squeeze(nn(example[:,:]).data) - label[:2]
             table.append([
-                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,:]).data)), 
-                        'validate',  # noise variance,
-                        ])
+                'validate',  # noise variance,
+                np.linalg.norm(e),
+                ] + e.tolist())
 
         for (example, label) in test:
             # get all samples with the correct noise variance
+            e = np.squeeze(nn(example[:,:]).data) - label[:2]
             table.append([
-                np.linalg.norm(label[:2] - np.squeeze(nn(example[:,:]).data)), 
-                        'test',  # noise variance,
-                        ])
+                'test',  # noise variance,
+                np.linalg.norm(e),
+                ] + e.tolist())
 
-    df = pd.DataFrame(data=table, columns=['Error', 'Set'])
+    df = pd.DataFrame(data=table, columns=['Set', 'Error', 'x', 'y'])
 
     sns.violinplot(data=df, x='Set', y='Error')
     plt.ylim([0, 200])
     plt.savefig('pub_2018_ASJ_fall/mse_{}.pdf'.format(config['name']))
+
+    plt.figure()
+    sns.jointplot(x='x', y='x', data=df[df['Set'] == 'test'])
+    plt.savefig('pub_2018_ASJ_fall/scatter_{}.pdf'.format(config['name']))
     plt.show()
