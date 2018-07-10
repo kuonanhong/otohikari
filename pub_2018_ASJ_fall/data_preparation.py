@@ -24,6 +24,8 @@ if __name__ == '__main__':
             help='The number of examples out of one which is kept for validation')
     parser.add_argument('--trim_flat', type=float,
             help='Skip vectors whose difference (max - min) is less than the given number')
+    parser.add_argument('--norm', action='store_true',
+            help='Move minimum element to zero')
     args = parser.parse_args()
 
     # get the path to the experiment files
@@ -79,6 +81,8 @@ if __name__ == '__main__':
 
             tau = frame / protocol['video_info']['fps']
             in_vec = np.mean(blinky_sig[frame-nf:frame+nf+1,blinky_valid_mask], axis=0)
+            if args.norm:
+                in_vec -= in_vec.min()
             in_vec /= in_vec.max()
 
             if args.trim_flat is not None and np.max(in_vec) - np.min(in_vec) < args.trim_flat:
@@ -105,9 +109,13 @@ if __name__ == '__main__':
     if not os.path.exists(dest_dir):
         os.mkdir(dest_dir)
 
-    if args.trim_flat is None:
-        data_fn = 'data.json.gz'
-    else:
-        data_fn = 'data_trim_flat_{}.json.gz'.format(args.trim_flat)
+    data_fn = 'data'
 
+    if args.trim_flat is not None:
+        data_fn += '_trim_{}'.format(args.trim_flat)
+
+    if args.norm:
+        data_fn += '_norm'
+
+    data_fn += '.json.gz'
     jsongzip.dump(os.path.join(dest_dir, data_fn), data)
