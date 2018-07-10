@@ -69,6 +69,6 @@ if __name__ == '__main__':
     plt.savefig('pub_2018_ASJ_fall/mse_{}.pdf'.format(config['name']))
 
     plt.figure()
-    sns.jointplot(x='x', y='x', data=df[df['Set'] == 'test'])
+    sns.jointplot(x='x', y='y', data=df[df['Set'] == 'test'])
     plt.savefig('pub_2018_ASJ_fall/scatter_{}.pdf'.format(config['name']))
     plt.show()

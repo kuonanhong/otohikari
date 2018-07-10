@@ -22,10 +22,8 @@ if __name__ == '__main__':
             help='The number of frames to average to create one input vector')
     parser.add_argument('-v', '--validation_frac', type=int, default=10,
             help='The number of examples out of one which is kept for validation')
-    parser.add_argument('--trim_flat', type=float,
-            help='Skip vectors whose difference (max - min) is less than the given number')
-    parser.add_argument('--norm', action='store_true',
-            help='Move minimum element to zero')
+    parser.add_argument('--no_avg', action='store_true',
+            help='Do not average frames, concatenate')
     args = parser.parse_args()
 
     # get the path to the experiment files
@@ -80,13 +78,13 @@ if __name__ == '__main__':
                 continue
 
             tau = frame / protocol['video_info']['fps']
-            in_vec = np.mean(blinky_sig[frame-nf:frame+nf+1,blinky_valid_mask], axis=0)
-            if args.norm:
-                in_vec -= in_vec.min()
-            in_vec /= in_vec.max()
+            if args.no_avg:
+                in_vec = blinky_sig[frame-nf:frame+nf+1,blinky_valid_mask].ravel()
+            else:
+                in_vec = np.mean(blinky_sig[frame-nf:frame+nf+1,blinky_valid_mask], axis=0)
 
-            if args.trim_flat is not None and np.max(in_vec) - np.min(in_vec) < args.trim_flat:
-                continue
+            in_vec -= in_vec.min()
+            in_vec /= in_vec.max()
 
             example = [in_vec.tolist(), src_loc]
 
@@ -111,11 +109,8 @@ if __name__ == '__main__':
 
     data_fn = 'data'
 
-    if args.trim_flat is not None:
-        data_fn += '_trim_{}'.format(args.trim_flat)
-
-    if args.norm:
-        data_fn += '_norm'
+    if args.no_avg:
+        data_fn += '_no_avg'
 
     data_fn += '.json.gz'
     jsongzip.dump(os.path.join(dest_dir, data_fn), data)
