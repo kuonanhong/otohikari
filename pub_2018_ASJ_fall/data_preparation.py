@@ -22,13 +22,8 @@ if __name__ == '__main__':
             help='The number of frames to average to create one input vector')
     parser.add_argument('-v', '--validation_frac', type=int, default=10,
             help='The number of examples out of one which is kept for validation')
-<<<<<<< HEAD
     parser.add_argument('-t', '--thresh', type=float,
             help='Threshold for blinky activity detection')
-=======
-    parser.add_argument('--no_avg', action='store_true',
-            help='Do not average frames, concatenate')
->>>>>>> bdbaa8e56b6da22906c1940ea8f60ce3e0ff08cd
     args = parser.parse_args()
 
     # get the path to the experiment files

@@ -15,6 +15,6 @@ python ${DIR}/experiment_processing.py ${EXP_DIR}/protocol.json -v hori_4
 python ${DIR}/experiment_processing.py ${EXP_DIR}/protocol.json -v hori_5
 
 # Prepare the data extracted from the videos to be fed to the DNN
-python ${DIR}/data_preparation.py ${EXP_DIR}/protocol.json -t 0.2
+python ${DIR}/data_preparation.py ${EXP_DIR}/protocol.json -t 0.4 -n 1
 
 # Train the DNN

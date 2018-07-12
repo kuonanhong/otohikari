@@ -2,7 +2,6 @@ import chainer
 import chainer.functions as F
 import chainer.links as L
 import numpy as np
-import cupy as cp
 
 # collect all models in a dictionary for easy configuration
 models = dict()

@@ -72,7 +72,7 @@ if __name__ == '__main__':
         f_start, f_end = 0, None
 
     i_frame = f_start
-    nf = 2
+    nf = 0
 
     if source_locations is not None:
         while source_locations[0][0] < i_frame:
@@ -91,13 +91,11 @@ if __name__ == '__main__':
 
             if i_frame >= nf:
                 # perform localization
-                nn_in = np.mean(blinky_sig[i_frame-nf:i_frame+nf+1,blinky_valid_mask], axis=0)
-                nn_in_max = nn_in.max()
-                nn_in -= nn_in.min()
-                nn_in /= nn_in.max()
+                block = blinky_sig[i_frame-nf:i_frame+nf+1,blinky_valid_mask]
+                nn_in = np.mean(block, axis=0)
                 nn_in = nn_in[None,:].astype(np.float32)
 
-                if nn_in_max > 65:
+                if block.max() > 0.3:
                     y, x = nn(nn_in).data[0,:]
                     frame = cv2.circle(frame, (x,y), 5, color_est, -1)
 
