@@ -3,6 +3,7 @@ matplotlib.use('Agg')
 
 import json, os
 import numpy as np
+import cupy as cp
 import pandas as pd
 import chainer
 import seaborn as sns
@@ -34,7 +35,7 @@ if __name__ == '__main__':
     if not os.path.exists(pickle_fn):
 
         # Load the dataset
-        train, validate, test = get_data('/Volumes' + config['data']['file'],
+        train, validate, test = get_data(config['data']['file'],
                 data_formatter=data_formatter, 
                 label_formatter=label_formatter, skip=skip)
 
@@ -68,7 +69,7 @@ if __name__ == '__main__':
 
         df = pd.DataFrame(data=table, columns=['Set', 'Error', 'x', 'y'])
 
-        pd.to_pickle(pickle_fn)
+        df.to_pickle(pickle_fn)
 
     else:
         df = pd.read_pickle(pickle_fn)
@@ -78,7 +79,6 @@ if __name__ == '__main__':
     sns.violinplot(data=df, x='Set', y='Error')
     plt.ylim([0, 200])
     plt.savefig('pub_2018_ASJ_fall/mse_{}.pdf'.format(config['name']))
-
 
     # 90th percentile in L_inf norm (for test set)
     df_test = df[df['Set'] == 'test']
