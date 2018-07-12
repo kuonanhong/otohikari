@@ -77,11 +77,15 @@ if __name__ == '__main__':
             if len(ignore_list.intersection(set(range(frame-nf, frame+nf+1)))) > 0:
                 continue
 
+            frames = blinky_sig[frame-nf:frame+nf+1,blinky_valid_mask]
+            if frames.shape[0] < args.num_frames:
+                continue
+
             tau = frame / protocol['video_info']['fps']
             if args.no_avg:
-                in_vec = blinky_sig[frame-nf:frame+nf+1,blinky_valid_mask].ravel()
+                in_vec = frames.ravel().astype(np.float32)
             else:
-                in_vec = np.mean(blinky_sig[frame-nf:frame+nf+1,blinky_valid_mask], axis=0)
+                in_vec = np.mean(frames, axis=0)
 
             in_vec -= in_vec.min()
             in_vec /= in_vec.max()
