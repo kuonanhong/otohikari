@@ -92,12 +92,14 @@ if __name__ == '__main__':
             if i_frame >= nf:
                 # perform localization
                 nn_in = np.mean(blinky_sig[i_frame-nf:i_frame+nf+1,blinky_valid_mask], axis=0)
+                nn_in_max = nn_in.max()
                 nn_in -= nn_in.min()
                 nn_in /= nn_in.max()
                 nn_in = nn_in[None,:].astype(np.float32)
 
-                y, x = nn(nn_in).data[0,:]
-                frame = cv2.circle(frame, (x,y), 5, color_est, -1)
+                if nn_in_max > 65:
+                    y, x = nn(nn_in).data[0,:]
+                    frame = cv2.circle(frame, (x,y), 5, color_est, -1)
 
                 # check if groundtruth is available for that location
                 if source_locations is not None and i_frame == source_locations[0][0]:

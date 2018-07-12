@@ -6,6 +6,73 @@ import matplotlib.pyplot as plt
 from scipy.io import wavfile
 from readers import ThreadedVideoStream, ProcessorBase, PixelCatcher, BoxCatcher
 
+def gamma_inv(pixels, g=2.8):
+    '''
+    Inverse the gamma correction from the video encoding
+    '''
+    return (pixels / 255) ** g
+
+
+def max_no_sat(X, mask, axis=-1, sat=1):
+    '''
+    picks the column with maximum value that doesn't saturate
+    X is (n_frames, n_pixels, n_box)
+    '''
+
+    n_frames, n_pxls, n_box = X.shape
+
+    locs = np.zeros(n_pxls, dtype=np.int)
+    max_val = np.zeros(n_pxls)
+
+    for pxl in range(n_pxls):
+
+        not_found = False
+
+        for b in range(n_box):
+
+            m = np.max(X[mask,pxl,b])
+            if m == sat:
+                continue
+
+            avg = m
+            if avg > max_val[pxl]:
+                max_val[pxl] = avg
+                locs[pxl] = b
+
+    return np.hstack([X[:,pxl,locs[pxl],None] for pxl in range(n_pxls)])
+
+def avg_no_sat(X, mask, axis=-1, sat=1):
+    '''
+    picks the column with maximum value that doesn't saturate
+    X is (n_frames, n_pixels, n_box)
+    '''
+
+    n_frames, n_pxls, n_box = X.shape
+
+    locs = np.zeros(n_pxls, dtype=np.int)
+    max_val = np.zeros(n_pxls)
+
+    ret = np.zeros((X.shape[:2]), dtype=np.float32)
+
+    for pxl in range(n_pxls):
+
+        not_found = False
+        no_sat_set = []
+
+        for b in range(n_box):
+
+            m = np.max(X[mask,pxl,b])
+            if sat is not None and m >= sat:
+                continue
+            else:
+                no_sat_set.append(b)
+
+        if len(no_sat_set) > 0:
+            ret[:,pxl] = np.mean(X[:,pxl,no_sat_set].astype(np.float32), axis=1)
+
+    return ret
+    
+
 def ccw3p(p1, p2, img_size):
     '''
     Finds all the points that are anti-clock wise (or colinear)
@@ -37,6 +104,24 @@ def ccw3p(p1, p2, img_size):
 
 
 class Tracker(ProcessorBase):
+    '''
+    Class to perform tracking of a bright moving object in a fixed background
+
+    Parameters
+    ----------
+    protocol: str
+        The path to the experimental protocol file
+    red_thresh: float
+        Threshold for detection in red channel
+    bg_len: int
+        Number of frames to use at the beginning for the computation of the background
+    search_box: int
+        Size of the box around the previous location where to search for the next location
+    monitor: bool, optional
+        Monitor the number of frames processed per second
+    qlen: int, optional
+        The number of frames to use in the monitoring
+    '''
 
     def __init__(self, protocol, red_thresh, bg_len, search_box, monitor=False, qlen=10):
 
@@ -155,66 +240,6 @@ class Tracker(ProcessorBase):
         return self.trajectory
 
 
-def max_no_sat(X, mask, axis=-1, sat=255):
-    '''
-    picks the column with maximum value that doesn't saturate
-    X is (n_frames, n_pixels, n_box)
-    '''
-
-    n_frames, n_pxls, n_box = X.shape
-
-    locs = np.zeros(n_pxls, dtype=np.int)
-    max_val = np.zeros(n_pxls)
-
-    for pxl in range(n_pxls):
-
-        not_found = False
-
-        for b in range(n_box):
-
-            m = np.max(X[mask,pxl,b])
-            if m == sat:
-                continue
-
-            avg = m
-            if avg > max_val[pxl]:
-                max_val[pxl] = avg
-                locs[pxl] = b
-
-    return np.hstack([X[:,pxl,locs[pxl],None] for pxl in range(n_pxls)])
-
-def avg_no_sat(X, mask, axis=-1, sat=255):
-    '''
-    picks the column with maximum value that doesn't saturate
-    X is (n_frames, n_pixels, n_box)
-    '''
-
-    n_frames, n_pxls, n_box = X.shape
-
-    locs = np.zeros(n_pxls, dtype=np.int)
-    max_val = np.zeros(n_pxls)
-
-    ret = np.zeros((X.shape[:2]), dtype=np.uint8)
-
-    for pxl in range(n_pxls):
-
-        not_found = False
-        no_sat_set = []
-
-        for b in range(n_box):
-
-            m = np.max(X[mask,pxl,b])
-            if m == sat:
-                continue
-            else:
-                no_sat_set.append(b)
-
-        if len(no_sat_set) > 0:
-            ret[:,pxl] = np.mean(X[:,pxl,no_sat_set].astype(np.float), axis=1).astype(np.uint8)
-
-    return ret
-    
-
 if __name__ == '__main__':
 
     video_choices = [ 'noise', 'speech', 'hori_1', 'hori_2', 'hori_3', 'hori_4', 'hori_5', ]
@@ -246,7 +271,7 @@ if __name__ == '__main__':
     # Create some random colors
     color = np.random.randint(0,255,(100,3))
 
-    boxer = BoxCatcher(blinkies, [5, 5], monitor=True)
+    boxer = BoxCatcher(blinkies, [3, 3], monitor=True)
     catcher = PixelCatcher(blinkies)
     tracker = ( Tracker(protocol=protocol, red_thresh=100, bg_len=400, search_box=300) if args.track else None )
 
@@ -305,7 +330,7 @@ if __name__ == '__main__':
     if args.video in protocol['mask_ignore_frames']:
         mask[protocol['mask_ignore_frames'][args.video]] = False
 
-    blinky_sel = avg_no_sat(blinky_gray, mask=mask)
+    blinky_sel = avg_no_sat(gamma_inv(blinky_gray), mask=mask, sat=None)
     wavfile.write(blinky_fn, int(np.round(fps)), blinky_sel)
 
     # save the tracked RC car locations
