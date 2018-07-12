@@ -28,7 +28,7 @@ if __name__ == '__main__':
     # Helper to load the dataset
     if 'outputs' in config['data']['format_kwargs']:
         config['data']['format_kwargs'].pop('outputs')
-    data_formatter, label_formatter, skip = get_formatters(outputs=(0,4), **config['data']['format_kwargs'])
+    data_formatter, label_formatter, skip = get_formatters(outputs=(0,2), **config['data']['format_kwargs'])
 
     pickle_fn = '.pub_2018_ASJ_fall_test_{}.pickle'.format(config['name'])
 
