@@ -30,7 +30,7 @@ def get_formatters(method='reshape', frames=(1,16), outputs=(0,2)):
     elif method == 'none':
 
         def data_formatter(e):
-            return np.array(e, dtype=np.float32).reshape((1,-1))
+            return np.array(e, dtype=np.float32)
 
     def label_formatter(l):
         return np.array(l[slice(*outputs)], dtype=np.float32)

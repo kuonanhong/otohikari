@@ -11,12 +11,33 @@ import matplotlib.pyplot as plt
 
 from ml_localization import get_data, models, get_formatters
 
+def baseline(blinky_signals, blinky_locations, k_max=1):
+
+    I = np.argsort(blinky_signals)[-k_max:]
+
+    # create weights
+    w = blinky_signals[I]
+    w /= np.sum(w)
+
+    # weighted combinations of blinky locations
+    est = np.sum(w[:,None] * blinky_locations[I,:], axis=0)
+
+    return est
+
+
 if __name__ == '__main__':
 
     import argparse
     parser = argparse.ArgumentParser(description='Run a model on a test set')
+    parser.add_argument('protocol', type=str,
+            help='The JSON file containing the experimental details.')
     parser.add_argument('config', type=str, help='The JSON file containing the configuration.')
     args = parser.parse_args()
+
+    with open(args.protocol, 'r') as f:
+        protocol = json.load(f)
+
+    blinky_locations = np.array(protocol['blinky_locations'])
 
     with open(args.config, 'r') as f:
         config = json.load(f)
@@ -67,6 +88,20 @@ if __name__ == '__main__':
                     np.linalg.norm(e),
                     ] + e.tolist())
 
+                # apply baseline on test data
+                e_bl = baseline(example[0,:], blinky_locations) - label[:2]
+                table.append([
+                    'baseline $k=1$',  # noise variance,
+                    np.linalg.norm(e_bl),
+                    ] + e_bl.tolist())
+
+                # apply baseline on test data
+                e_bl = baseline(example[0,:], blinky_locations, k_max=4) - label[:2]
+                table.append([
+                    'baseline $k=4$',  # noise variance,
+                    np.linalg.norm(e_bl),
+                    ] + e_bl.tolist())
+
         df = pd.DataFrame(data=table, columns=['Set', 'Error', 'x', 'y'])
 
         df.to_pickle(pickle_fn)
@@ -86,7 +121,7 @@ if __name__ == '__main__':
     blim = [-p90, p90]
 
     # first we find the 90 percentile (circularly)
-    for set_ in ['train', 'validate', 'test']:
+    for set_ in ['train', 'validate', 'test', 'baseline $k=1$', 'baseline $k=4$']:
         sns.jointplot(x='x', y='y', data=df[df['Set'] == set_],
                 kind='scatter', stat_func=None,
                 xlim=blim, ylim=blim, s=2)
