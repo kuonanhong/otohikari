@@ -172,32 +172,46 @@ class SimplerBlinkNet(chainer.Chain):
 
             # sub_components
             n_res_in = self.locations.shape[0]
+            self.input = L.Linear(n_blinkies, n_blinkies)
             self.res_blocks = chainer.ChainList(
                     *[ResBlock(n_blinkies, n_res_hidden) for n in range(n_res_blk)]
                     )
             self.out_linear_x = L.Linear(n_blinkies, n_blinkies)
-            self.out_linear_y = L.Linear(n_blinkies, n_blinkies)
+            #self.out_linear_y = L.Linear(n_blinkies, n_blinkies)
 
 
     def __call__(self, x):
 
-        h = x
+        h = F.relu(self.input(x))
+
+        if self.dropout is not None:
+            h = F.dropout(h, ratio=self.dropout)
 
         for R in self.res_blocks:
-
             h = F.relu(R(h))
 
-            if self.dropout is not None:
-                h = F.dropout(h, ratio=self.dropout)
+        if self.dropout is not None:
+            h_x = F.dropout(h, ratio=self.dropout)
+            h_x = self.out_linear_x(F.relu(h_x))
+        else:
+            h_x = self.out_linear_x(F.relu(h))
 
-        h_x = self.out_linear_x(F.relu(h))
-        h_y = self.out_linear_y(F.relu(h))
+        '''
+        if self.dropout is not None:
+            h_y = F.dropout(h, ratio=self.dropout)
+            h_y = self.out_linear_y(F.relu(h_y))
+        else:
+            h_y = self.out_linear_y(F.relu(h))
 
         h = F.concat((h_x[:,:,None], h_y[:,:,None]), axis=2)
 
         loc_bc = F.broadcast_to(self.locations[None,:,:], h.shape)
 
         return F.sum(h * loc_bc, axis=1)
+        '''
+
+
+        return F.matmul(h_x, self.locations)
 
 models['SimplerBlinkNet'] = SimplerBlinkNet
 
@@ -216,26 +230,31 @@ class MaxLocNet(chainer.Chain):
         The keyword arguments of the network
     '''
 
-    def __init__(self, locations, net_name, *net_args, **net_kwargs):
+    def __init__(self, locations, k_max, net_name, *net_args, **net_kwargs):
         super(MaxLocNet, self).__init__()
         with self.init_scope():
 
             self.locations = chainer.Parameter(np.array(locations, dtype=np.float32))
+            self.k_max = k_max
             self.network = models[net_name](*net_args, **net_kwargs)
             self.eye = chainer.Parameter(np.eye(self.locations.shape[0], dtype=np.float32))
 
     def __call__(self, x):
+
+        n_batch, n_blinkies = x.shape
+
         # find blinky most likely closest to source
-        if x.ndim == 3:
-            x = np.squeeze(x)
+        max_loc = np.argsort(x, axis=1)[:,-self.k_max:]
+        loc = []
+        for i in range(self.k_max):
+            loc.append(self.locations[max_loc[:,i],:])
+        loc = F.concat(loc, axis=1)
 
-        max_loc = np.argmax(x, axis=1)
-        loc = self.locations[max_loc,:]
-        one_hot = self.eye[max_loc,:]
-
-        h = F.concat((x, one_hot), axis=1)
+        h = F.concat((x, loc), axis=1)
         h = self.network(h)
 
-        return loc + h
+        loc = F.reshape(loc, (-1, self.k_max, self.locations.shape[1]))
+
+        return np.sum(loc * F.broadcast_to(h[:,:,None], loc.shape), axis=1)
 
 models['MaxLocNet'] = MaxLocNet

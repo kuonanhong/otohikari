@@ -5,7 +5,7 @@
 
   "training" : {
     "batchsize" : 1000,
-    "epoch" : 1000,
+    "epoch" : 3000,
     "out" : "pub_2018_ASJ_fall/dnn/results/simpler_blink_net"
   },
 
@@ -35,10 +35,10 @@
         [637, 1134], [608, 1207], [579, 1277], [558, 1330], [538, 1381],
         [574, 668]
       ],
-      6, 10
+      3, 10
     ],
     "kwargs" : {
-      "dropout":0.1
+      "dropout":0.05
     },
     "file" : "pub_2018_ASJ_fall/dnn/models/simpler_blink_net.npz"
   },
