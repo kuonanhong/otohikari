@@ -4,8 +4,8 @@
   "description" : "10 layers resnet with 0.1 dropout on input",
 
   "training" : {
-    "batchsize" : 100,
-    "epoch" : 2000,
+    "batchsize" : 200,
+    "epoch" : 3000,
     "out" : "pub_2018_ASJ_fall/dnn/results/resnet_dropout"
   },
 

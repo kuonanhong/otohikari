@@ -60,7 +60,7 @@ class ResBlock(chainer.Chain):
     def __call__(self, x):
         h = x
         h = F.relu(self.hidden1(h))
-        h = self.hidden2(h)
+        h = F.relu(self.hidden2(h))
 
         return x + h
 
@@ -88,7 +88,7 @@ class ResReg(chainer.Chain):
             h = F.dropout(h, ratio=self.dropout)
 
         for R in self.res_blocks:
-            h = F.relu(R(h))
+            h = R(h)
 
         return self.output(h)
 
