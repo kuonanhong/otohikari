@@ -4,14 +4,14 @@
   "description" : "10 layers resnet with 0.1 dropout on input",
 
   "training" : {
-    "batchsize" : 1000,
-    "epoch" : 1000,
+    "batchsize" : 200,
+    "epoch" : 3000,
     "out" : "pub_2018_ASJ_fall/dnn/results/resnet_dropout"
   },
 
   "model" : {
     "name" : "ResReg",
-    "args" : [10, 100, 10, 2],
+    "args" : [3, 101, 20, 2],
     "kwargs" : {
       "dropout" : 0.1
     },
