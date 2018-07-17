@@ -4,8 +4,8 @@
   "description" : "The network estimates the weights to linearly combine the sensor locations",
 
   "training" : {
-    "batchsize" : 1000,
-    "epoch" : 3000,
+    "batchsize" : 200,
+    "epoch" : 1000,
     "out" : "pub_2018_ASJ_fall/dnn/results/simpler_blink_net"
   },
 
@@ -35,10 +35,10 @@
         [637, 1134], [608, 1207], [579, 1277], [558, 1330], [538, 1381],
         [574, 668]
       ],
-      3, 10
+      30, 10
     ],
     "kwargs" : {
-      "dropout":0.05
+      "dropout":0.1
     },
     "file" : "pub_2018_ASJ_fall/dnn/models/simpler_blink_net.npz"
   },

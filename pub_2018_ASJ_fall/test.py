@@ -66,7 +66,11 @@ if __name__ == '__main__':
         # import model and use MSE
         nn = models[config['model']['name']](*config['model']['args'], **config['model']['kwargs'])
         chainer.serializers.load_npz(config['model']['file'], nn)
-        nn_wrap = lambda x : nn(x).data
+
+        def nn_wrap(x):
+            with chainer.using_config('train', False):
+                y = nn(x).data
+            return y
 
         algorithms[config['name']] = dict(f=nn_wrap, args=[], kwargs={})
 

@@ -171,14 +171,12 @@ class SimplerBlinkNet(chainer.Chain):
             self.dropout = dropout
 
             # sub_components
+            self.input = L.Linear(None, self.locations.shape[0])
+            self.output = L.Linear(self.locations.shape[0], self.locations.shape[0])
             n_res_in = self.locations.shape[0]
-            self.input = L.Linear(n_blinkies, n_blinkies)
             self.res_blocks = chainer.ChainList(
                     *[ResBlock(n_blinkies, n_res_hidden) for n in range(n_res_blk)]
                     )
-            self.out_linear_x = L.Linear(n_blinkies, n_blinkies)
-            #self.out_linear_y = L.Linear(n_blinkies, n_blinkies)
-
 
     def __call__(self, x):
 
@@ -188,30 +186,11 @@ class SimplerBlinkNet(chainer.Chain):
             h = F.dropout(h, ratio=self.dropout)
 
         for R in self.res_blocks:
-            h = F.relu(R(h))
+            h = R(h)
 
-        if self.dropout is not None:
-            h_x = F.dropout(h, ratio=self.dropout)
-            h_x = self.out_linear_x(F.relu(h_x))
-        else:
-            h_x = self.out_linear_x(F.relu(h))
+        h = F.relu(self.output(h))
 
-        '''
-        if self.dropout is not None:
-            h_y = F.dropout(h, ratio=self.dropout)
-            h_y = self.out_linear_y(F.relu(h_y))
-        else:
-            h_y = self.out_linear_y(F.relu(h))
-
-        h = F.concat((h_x[:,:,None], h_y[:,:,None]), axis=2)
-
-        loc_bc = F.broadcast_to(self.locations[None,:,:], h.shape)
-
-        return F.sum(h * loc_bc, axis=1)
-        '''
-
-
-        return F.matmul(h_x, self.locations)
+        return F.matmul(h, self.locations)
 
 models['SimplerBlinkNet'] = SimplerBlinkNet
 
