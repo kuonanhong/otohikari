@@ -73,6 +73,7 @@ if __name__ == '__main__':
 
     i_frame = f_start
     nf = 0
+    thresh = 0.4 if args.video in ['speech', 'noise'] else 0.25
 
     if source_locations is not None:
         while source_locations[0][0] < i_frame:
@@ -95,7 +96,7 @@ if __name__ == '__main__':
                 nn_in = np.mean(block, axis=0)
                 nn_in = nn_in[None,:].astype(np.float32)
 
-                if block.max() > 0.3:
+                if block.max() > thresh:
                     y, x = nn(nn_in).data[0,:]
                     frame = cv2.circle(frame, (x,y), 5, color_est, -1)
 

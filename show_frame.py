@@ -23,4 +23,4 @@ if __name__ == '__main__':
     the_frame = frame_grabber(args.video_file, frame=args.frame, show=True)
 
     if args.save is not None:
-        plt.savefig(args.save)
+        plt.savefig(args.save, dpi=300)
