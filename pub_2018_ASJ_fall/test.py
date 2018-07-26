@@ -4,14 +4,13 @@ matplotlib.use('Agg')
 import argparse
 import json, os
 import numpy as np
-import cupy as cp
 import pandas as pd
 import chainer
 
 import seaborn as sns
 import matplotlib.pyplot as plt
 
-from ml_localization import get_data, models, get_formatters
+from ml_localization import get_data_raw, get_data, models, get_formatters
 
 def baseline(blinky_signals, blinky_locations, k_max=1):
 
@@ -80,24 +79,16 @@ if __name__ == '__main__':
         data_formatter, label_formatter, skip = get_formatters(outputs=(0,2), **config['data']['format_kwargs'])
 
         if dataset_file is None:
-            dataset_file = config['data']['file']
+            dataset_file = '/Volumes' + config['data']['file']
 
             # Load the dataset
-            train, validate, test = get_data(dataset_file,
+            sets = get_data_raw(dataset_file,
                     data_formatter=data_formatter, 
                     label_formatter=label_formatter, skip=skip)
 
         elif dataset_file != config['data']['file']:
 
             raise ValueError('The model {} was trained with a different dataset!')
-
-
-    sets = dict(
-            train=train,
-            validate=validate,
-            test=test
-            )
-
 
     # Run all the algorithms and store in a dataframe
     columns = ['Set', 'Algorithm', 'Error', 'x', 'y']

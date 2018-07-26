@@ -12,8 +12,7 @@ def in_interval(n, interval):
 
 if __name__ == '__main__':
 
-    video_choices = ['noise', 'speech',]
-    # video_choices + ['hori_1', 'hori_2', 'hori_3', 'hori_4', 'hori_5',]
+    video_choices = ['noise', 'speech', 'hori_1', 'hori_2', 'hori_3', 'hori_4', 'hori_5',]
 
     parser = argparse.ArgumentParser(description='Extract locations of blinkies and moving source from vide')
     parser.add_argument('protocol', type=str,
@@ -22,8 +21,6 @@ if __name__ == '__main__':
             help='The number of frames to average to create one input vector')
     parser.add_argument('-v', '--validation_frac', type=int, default=10,
             help='The number of examples out of one which is kept for validation')
-    parser.add_argument('-t', '--thresh', type=float,
-            help='Threshold for blinky activity detection')
     args = parser.parse_args()
 
     # get the path to the experiment files
@@ -38,10 +35,13 @@ if __name__ == '__main__':
         test=[],
         validation=[],
         train=[],
+        hori_test=[],
         )
 
     not_test_counter = 0
     nf = args.num_frames // 2  # the number of frames on each side to average
+
+    thresholds = protocol['detection_thresholds']
 
     for video in video_choices:
 
@@ -53,7 +53,13 @@ if __name__ == '__main__':
         # read in the groundtruth locations
         source_loc_fn = os.path.join(experiment_path,
                 'processed/{}_source_locations.json.gz'.format(video))
-        source_locations = jsongzip.load(source_loc_fn)
+        if os.path.exists(source_loc_fn):
+            source_locations = jsongzip.load(source_loc_fn)
+        elif video.startswith('hori'):
+            # for horiike video, same location for all frames
+            loc = protocol['hori_loc'][video]
+            n_frames = blinky_sig.shape[0]
+            source_locations = list(zip(range(n_frames), [loc] * n_frames))
 
         # list of frames to ignore
         if video in protocol['mask_ignore_frames']:
@@ -66,9 +72,10 @@ if __name__ == '__main__':
         blinky_valid_mask[protocol['blinky_ignore']] = False
 
         # the intervals
-        parallel_short = protocol['video_segmentation'][video]['parallel_short']
-        parallel_long = protocol['video_segmentation'][video]['parallel_long']
-        diagonal = protocol['video_segmentation'][video]['diagonal']
+        if video in protocol['video_segmentation']:
+            parallel_short = protocol['video_segmentation'][video]['parallel_short']
+            parallel_long = protocol['video_segmentation'][video]['parallel_long']
+            diagonal = protocol['video_segmentation'][video]['diagonal']
 
         for (frame, src_loc) in source_locations:
 
@@ -84,14 +91,17 @@ if __name__ == '__main__':
             block = blinky_sig[frame-nf:frame+nf+1,blinky_valid_mask]
 
             # skip frames that are not very active
-            if args.thresh is not None and np.max(block) < args.thresh:
+            if np.max(block) < thresholds[video]:
                 continue
 
             in_vec = np.mean(block, axis=0)
 
             example = [in_vec.tolist(), src_loc]
 
-            if in_interval(tau, parallel_short) or in_interval(tau, parallel_long):
+            if video.startswith('hori'):
+                data['hori_test'].append(example)
+
+            elif in_interval(tau, parallel_short) or in_interval(tau, parallel_long):
 
                 not_test_counter += 1
 

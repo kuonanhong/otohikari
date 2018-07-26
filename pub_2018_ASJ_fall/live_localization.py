@@ -6,7 +6,7 @@ import chainer
 import matplotlib.pyplot as plt
 from scipy.io import wavfile
 from readers import ThreadedVideoStream, ProcessorBase, PixelCatcher, BoxCatcher
-from ml_localization import get_data, models, get_formatters
+from ml_localization import get_data_raw, get_data, models, get_formatters
 
 if __name__ == '__main__':
 
