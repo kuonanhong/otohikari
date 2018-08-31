@@ -18,3 +18,7 @@ python ${DIR}/experiment_processing.py ${EXP_DIR}/protocol.json -v hori_5
 python ${DIR}/data_preparation.py ${EXP_DIR}/protocol.json -n 1
 
 # Train the DNN
+python ${DIR}/../ml_localization/train.py ${DIR}/dnn/config/resnet_dropout.json
+
+# Evaluate on the test set
+python ${DIR}/test.py ${EXP_DIR}/protocol.json ${DIR}/dnn/config/resnet_dropout.json
