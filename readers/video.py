@@ -84,6 +84,15 @@ class ThreadedVideoStream(object):
         else:
             return None
 
+    def get_shape(self):
+        ''' Return the frame size as a tuple ``(width, height,)`` '''
+        if self.capture is not None:
+            width = int(self.capture.get(3))  # float
+            height = int(self.capture.get(4)) # float
+            return (width, height,)
+        else:
+            return None
+
     def start(self):
         ''' Start the stream '''
         self._stopped = False

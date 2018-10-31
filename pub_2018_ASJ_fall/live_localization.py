@@ -8,6 +8,8 @@ from scipy.io import wavfile
 from readers import ThreadedVideoStream, ProcessorBase, PixelCatcher, BoxCatcher
 from ml_localization import get_data_raw, get_data, models, get_formatters
 
+TEMP_VIDEO_FILE = 'temp.avi'
+
 if __name__ == '__main__':
 
     video_choices = [ 'noise', 'speech', 'hori_1', 'hori_2', 'hori_3', 'hori_4', 'hori_5', ]
@@ -21,6 +23,11 @@ if __name__ == '__main__':
             default=video_choices[0], help='The video segment to process')
     parser.add_argument('-p', '--path', type=str, choices=path_choices,
             default=path_choices[0], help='The path to process')
+    parser.add_argument('-s', '--save', type=str, metavar='PATH',
+            help='Save the video to given path')
+    parser.add_argument('--no_show', action='store_true',
+            help='Do not show the video while processing')
+    parser.add_argument('-f', '--format', choices=['mov','mp4','avi'], default='avi')
     args = parser.parse_args()
 
     # get the path to the experiment files
@@ -68,8 +75,10 @@ if __name__ == '__main__':
         f_start, f_end = protocol['video_segmentation'][args.video][args.path]
         f_start = int(f_start * protocol['video_info']['fps'])
         f_end = int(f_end * protocol['video_info']['fps'])
+        video_output_name = '{}_{}.{}'.format(args.video, args.path, args.format)
     else:
         f_start, f_end = 0, None
+        video_output_name = '{}.{}'.format(args.video, args.format)
 
     i_frame = f_start
     nf = 0
@@ -82,6 +91,11 @@ if __name__ == '__main__':
     with ThreadedVideoStream(video_path, start=f_start, end=f_end) as cap:
 
         cap.start()
+
+        if args.save is not None:
+            fourcc = cv2.VideoWriter_fourcc(*'MJPG')
+            shape = cap.get_shape()
+            writer = cv2.VideoWriter(TEMP_VIDEO_FILE, fourcc, cap.get_fps(), shape, isColor=True)
 
         while cap.is_streaming():
 
@@ -105,12 +119,48 @@ if __name__ == '__main__':
                     _, [y, x] = source_locations.pop(0)
                     frame = cv2.circle(frame, (x,y), 5, color_gt, -1)
 
-                cv2.imshow('frame', frame)
+                if not args.no_show:
+                    cv2.imshow('frame', frame)
+
+                if args.save is not None:
+                    writer.write(frame)
 
             i_frame += 1
 
             k = cv2.waitKey(1) & 0xff
             if k == 27:
                 break
+
+        if args.save is not None:
+            writer.release()
+
+            # now copy the sound
+            import subprocess, datetime
+
+            if not os.path.exists(args.save):
+                os.mkdir(args.save)
+
+            if args.path is not None:
+                output_name = os.path.join(args.save, video_output_name)
+
+            start_time_offset = datetime.timedelta(seconds=f_start / protocol['video_info']['fps'])
+            duration = datetime.timedelta(seconds=(f_end - f_start) / protocol['video_info']['fps'])
+            print(start_time_offset, duration)
+            cmd = [
+                    'ffmpeg',
+                    '-y',  # overwrite output file if existing
+                    '-ss', str(start_time_offset), '-t', str(duration), '-i', video_path,
+                    '-i', TEMP_VIDEO_FILE,
+                    '-c', 'h264',
+                    '-acodec', 'mp3',
+                    '-f', args.format,
+                    '-map', '0:a:0',
+                    '-map', '1:v:0',
+                    '-shortest',
+                    os.path.join(args.save, video_output_name),
+                    ]
+            print(' '.join(cmd))
+            subprocess.call(cmd)
+            os.remove(TEMP_VIDEO_FILE)
 
     cv2.destroyAllWindows()
