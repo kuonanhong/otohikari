@@ -211,8 +211,8 @@ class BoxCatcher(ProcessorBase):
         off_h = self.box_size[0] // 2
         off_v = self.box_size[1] // 2
         self.ranges = [
-                [ slice(loc[1] - off_v, loc[1] + off_v + 1),
-                  slice(loc[0] - off_h, loc[0] + off_h + 1), ]
+                [ slice(loc[0] - off_v, loc[0] + off_v + 1),
+                  slice(loc[1] - off_h, loc[1] + off_h + 1), ]
                 for loc in self.pixels ]
 
     def __process__(self, frames):
@@ -227,7 +227,7 @@ class BoxCatcher(ProcessorBase):
 
         extra_dims = frames.shape[:-3]  # in case the array has more than 3D
 
-        vals = [ frames[...,rx,ry,:].reshape(extra_dims + (-1, frames.shape[-1]))
+        vals = [ frames[...,rx,ry,:].reshape(extra_dims + (-1, frames.shape[-1])).copy()
                 for rx, ry in self.ranges]
 
         self.values.append(vals)

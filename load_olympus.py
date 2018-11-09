@@ -27,7 +27,7 @@ a_readsize = fs_a
 stats = OnlineStats((framesize_v[1], framesize_v[0], n_channels_v))
 
 video = ffmpeg_open_raw_video(args.filename, framesize_v, n_channels=n_channels_v, 
-                            bufsize=v_bufsize, readsize=v_readsize, online_func=stats.process)
+                            bufsize=v_bufsize, readsize=v_readsize, online_func=stats)
 video_time = np.arange(video.shape[0]) / fs_v
 
 audio = ffmpeg_open_raw_audio(args.filename, n_channels=n_channels_a, dtype=dtype_a,

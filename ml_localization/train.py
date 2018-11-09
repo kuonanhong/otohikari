@@ -21,6 +21,10 @@ metadata_perfmodel_fn = os.path.join(data_folder, 'metadata_train_test_test_mode
 
 
 def main():
+
+    # list of available GPUs
+    devices = {'main':0, 'second':2, 'third':3, 'fourth':4, 'fifth':5}
+
     parser = argparse.ArgumentParser(description='Training of fully conncted newtork for indoor acoustic localization.')
     parser.add_argument('config', type=str, help="The config file for the training, model, and data.")
     parser.add_argument('--batchsize', '-b', type=int, default=100,
@@ -29,6 +33,8 @@ def main():
                         help='Frequency of taking a snapshot')
     parser.add_argument('--out', '-o', default='result',
                         help='Directory to output the result')
+    parser.add_argument('--gpu', default='main', choices=devices.keys(),
+                        help='The GPU to use for the training')
     parser.add_argument('--resume', '-r', default='',
                         help='Resume the training from snapshot')
     parser.add_argument('--noplot', dest='plot', action='store_false',
@@ -38,15 +44,16 @@ def main():
     with open(args.config, 'r') as f:
         config = json.load(f)
 
+    gpu = args.gpu
     epoch = config['training']['epoch']
     batchsize = config['training']['batchsize']
+    out_dir = config['training']['out'] if 'out' in config['training'] else 'result'
 
     print('# Minibatch-size: {}'.format(batchsize))
     print('# epoch: {}'.format(epoch))
     print('')
 
-    devices = {'main':0, 'second':2, 'third':3, 'fourth':4, 'fifth':5}
-    chainer.cuda.get_device_from_id(devices['main']).use()
+    chainer.cuda.get_device_from_id(devices[gpu]).use()
 
     # Set up a neural network to train
     # Classifier reports mean squared error
@@ -77,11 +84,11 @@ def main():
 
     # Set up a trainer
     #updater = training.ParallelUpdater(train_iter, optimizer, devices=devices)
-    updater = training.StandardUpdater(train_iter, optimizer, device=devices['main'])
-    trainer = training.Trainer(updater, (epoch, 'epoch'), out=args.out)
+    updater = training.StandardUpdater(train_iter, optimizer, device=devices[gpu])
+    trainer = training.Trainer(updater, (epoch, 'epoch'), out=out_dir)
 
     # Evaluate the model with the test dataset for each epoch
-    trainer.extend(extensions.Evaluator(validate_iter, model, device=devices['main']))
+    trainer.extend(extensions.Evaluator(validate_iter, model, device=devices[gpu]))
 
     # Dump a computational graph from 'loss' variable at the first iteration
     # The "main" refers to the target link of the "main" optimizer.

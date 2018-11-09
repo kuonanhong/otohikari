@@ -27,6 +27,11 @@ def get_formatters(method='reshape', frames=(1,16), outputs=(0,2)):
         def data_formatter(e):
             return np.array(e, dtype=np.float32)[slice(*frames),:].mean(axis=0, keepdims=True)
 
+    elif method == 'none':
+
+        def data_formatter(e):
+            return np.array(e, dtype=np.float32)
+
     def label_formatter(l):
         return np.array(l[slice(*outputs)], dtype=np.float32)
 
@@ -37,13 +42,9 @@ def get_formatters(method='reshape', frames=(1,16), outputs=(0,2)):
     return data_formatter, label_formatter, skip
 
 
-def get_data(metadata_file, data_formatter=None, label_formatter=None, skip=None):
+def get_data_raw(metadata_file, data_formatter=None, label_formatter=None, skip=None):
 
     data_list = jsongzip.load(metadata_file)
-
-    train = data_list['train']
-    validation = data_list['validation']
-    test = data_list['test']
 
     def format_examples(examples):
         formated_examples = []
@@ -63,8 +64,22 @@ def get_data(metadata_file, data_formatter=None, label_formatter=None, skip=None
 
         return formated_examples
 
-    train = format_examples(train)
-    validation = format_examples(validation)
-    test = format_examples(test)
+    processed_datasets = dict()
 
-    return train, validation, test
+    for name, data in data_list.items():
+        processed_datasets[name] = format_examples(data)
+
+    return processed_datasets
+
+
+def get_data(metadata_file, data_formatter=None, label_formatter=None, skip=None):
+
+    proc_data = get_data_raw(
+            metadata_file,
+            data_formatter=data_formatter,
+            label_formatter=label_formatter,
+            skip=skip,
+            )
+
+    return proc_data['train'], proc_data['validation'], proc_data['test']
+
