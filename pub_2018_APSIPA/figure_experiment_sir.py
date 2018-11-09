@@ -82,19 +82,30 @@ g = sns.factorplot(
         kind='bar',
         sharey=False,
         hue_order=hue_order,
-        size=4,
-        aspect=1.3,
+        size=3.38649 / 1.3,  # the height
+        aspect=1.3,          # width = aspect * size, so here width = 3.38649 in = 8.6 cm
         legend_out=False,
         legend=False,
         )
 #plt.ylim([-10, 37.5])
 g.set_titles('')
 g.axes.flat[0].set_ylabel('SDR [dB]')
+g.axes.flat[0].set_yticks([-5, 0, 5, 10])
 g.axes.flat[1].set_ylabel('SIR [dB]')
 ax = g.axes.flat[0]
-leg = ax.legend(loc='upper left', frameon=True, facecolor='w', framealpha=0.7, edgecolor='w')
+leg = ax.legend(
+        bbox_to_anchor=[0.5,-0.25],
+        loc='lower center',
+        frameon=True,
+        facecolor='w',
+        framealpha=0.7,
+        edgecolor='w',
+        fontsize='x-small',
+        )
 
 sns.despine(left=True, bottom=True, offset=5)
+
+plt.tight_layout(pad=0.1)
 
 if not os.path.exists(args.output_dir):
     os.makedirs(args.output_dir)

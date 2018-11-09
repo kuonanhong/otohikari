@@ -321,17 +321,27 @@ def process_experiment_max_sinr(SIR, mic, blinky, args):
         # for informal listening tests, we need to high pass and normalize the
         # amplitude.
         if mic in ['camera', 'pyramic_2', 'pyramic_4']:
-            upper = np.max([audio[:,0].max(), out.max(), bss.max()])
+            upper = np.max([audio[:,0].max(), out.max(), bss.max(), ref[0,:,0].max()])
         else:
-            upper = np.max([audio[:,0].max(), out.max()])
-        sig_in = pra.highpass(audio[:,0].astype(np.float) / upper, fs_snd, fc=150)
-        sig_out = pra.highpass(out / upper, fs_snd, fc=150)
+            upper = np.max([audio[:,0].max(), out.max(), ref[0,:,0].max()])
 
-        f1 = os.path.join(args.save_sample, '{}_ch0_SIR_{}_dB.wav'.format(mic, SIR))
-        wavfile.write(f1, fs_snd, sig_in)
+
+        # Clean signal for reference
+        sig_ref = pra.highpass(ref[0,:,0].astype(np.float) / upper, fs_snd, fc=150)
+        f0 = os.path.join(args.save_sample, '{}_ref_SIR_NA_dB.wav'.format(mic))
+        wavfile.write(f0, fs_snd, sig_ref)
+
+        # Mix signal for reference
+        sig_mix = pra.highpass(audio[:,0].astype(np.float) / upper, fs_snd, fc=150)
+        f1 = os.path.join(args.save_sample, '{}_mix_SIR_{}_dB.wav'.format(mic, SIR))
+        wavfile.write(f1, fs_snd, sig_mix)
+
+        # Output of MaxSINR
+        sig_out = pra.highpass(out / upper, fs_snd, fc=150)
         f2 = os.path.join(args.save_sample, '{}_maxsinr_SIR_{}_dB.wav'.format(mic, SIR))
         wavfile.write(f2, fs_snd, sig_out)
 
+        # Output of BSS
         if mic in ['camera', 'pyramic_2', 'pyramic_4']:
             sig_bss = pra.highpass(bss[:,best_col] / upper, fs_snd, fc=150)
             f3 = os.path.join(args.save_sample, '{}_bss_SIR_{}_dB.wav'.format(mic, SIR))
