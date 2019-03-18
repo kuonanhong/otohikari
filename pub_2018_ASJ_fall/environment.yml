@@ -1,0 +1,12 @@
+name: otohikari-201809-ASJ
+dependencies:
+  - python
+  - numpy
+  - scipy
+  - matplotlib
+  - seaborn
+  - pandas
+  - chainer
+  - ipyparallel
+  - joblib
+
