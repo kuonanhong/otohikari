@@ -23,7 +23,7 @@ import mkl_fft as fft
 
 from max_sinr_beamforming import compute_variances, compute_gain
 
-experiment_folder = '../measurements/20180523/'
+experiment_folder = '/datanet/projects/otohikari/measurements/20180523/'
 protocol_file = os.path.join(experiment_folder, 'session-201805{session}/protocol.json')
 metadata_file = os.path.join(experiment_folder, 'session-201805{session}/processed/metadata.json')
 
